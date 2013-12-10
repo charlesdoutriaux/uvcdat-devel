@@ -1,0 +1,10 @@
+set(ocgis_MAJOR 0)
+set(ocgis_MINOR 0)
+set(ocgis_PATCH 7b)
+set(ocgis_VERSION ${ocgis_MAJOR}.${ocgis_MINOR}.${ocgis_PATCH})
+set(ocgis_URL ${LLNL_URL})
+set(ocgis_GZ ocgis-${ocgis_VERSION}.tar.gz)
+set(ocgis_MD5 ${ocgis_VERSION})
+set(ocgis_SOURCE ${GIT_PROTOCOL}github.com/NCPP/ocgis.git )
+
+add_cdat_package_dependent(ocgis "" "" ON "CDAT_BUILD_GRAPHICS" OFF)
