@@ -1,0 +1,12 @@
+set( netcdf4_MAJOR_SRC 1  )
+set( netcdf4_MINOR_SRC 0  )
+set( netcdf4_PATCH_SRC 7  )
+set(NETCDF4_URL ${LLNL_URL})
+set(NETCDF4_GZ netCDF4-${netcdf4_MAJOR_SRC}.${netcdf4_MINOR_SRC}.${netcdf4_PATCH_SRC}.tar.gz)
+set(NETCDF4_MD5 a2ac3014f833a78b53cbf19a556be9a1)
+set(NETCDF4_SOURCE ${NETCDF4_URL}/${NETCDF4_GZ})
+
+set (nm netcdf4)
+string(TOUPPER ${nm} uc_nm)
+set(${uc_nm}_VERSION ${${nm}_MAJOR_SRC}.${${nm}_MINOR_SRC}.${${nm}_PATCH_SRC})
+add_cdat_package_dependent(netcdf4 "" "" ON "CDAT_BUILD_GRAPHICS" OFF)
