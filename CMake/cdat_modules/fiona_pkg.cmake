@@ -1,11 +1,11 @@
 set( fiona_MAJOR_SRC 1  )
 set( fiona_MINOR_SRC 0  )
 set( fiona_PATCH_SRC 2  )
-set(fiona_URL ${LLNL_URL})
-set(fiona_GZ
+set(FIONA_URL ${LLNL_URL})
+set(FIONA_GZ
     Fiona-${fiona_MAJOR_SRC}.${fiona_MINOR_SRC}.${fiona_PATCH_SRC}.tar.gz)
-set(fiona_MD5 
-set(fiona_SOURCE ${fiona_URL}/${fiona_GZ})
+set(FIONA_MD5 ) 
+set(FIONA_SOURCE ${fiona_URL}/${fiona_GZ})
 
 set (nm fiona)
 string(TOUPPER ${nm} uc_nm)
