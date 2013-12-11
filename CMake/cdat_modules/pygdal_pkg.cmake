@@ -1,0 +1,12 @@
+set(pygdal_MAJOR_SRC 1 )
+set(pygdal_MINOR_SRC 9 )
+set(pygdal_PATCH_SRC 1 )
+set(PYGDAL_URL ${LLNL_URL})
+set(PYGDAL_GZ GDAL-${pygdal_MAJOR_SRC}.${pygdal_MINOR_SRC}.${pygdal_PATCH_SRC}.tar.gz)
+set(PYGDAL_MD5 60cb0e0b652dfb204e150bcb11190248)
+set(PYGDAL_SOURCE ${PYGDAL_URL}/${PYGDAL_GZ})
+
+set (nm gdal)
+string(TOUPPER ${nm} uc_nm)
+set(${uc_nm}_VERSION ${${nm}_MAJOR_SRC}.${${nm}_MINOR_SRC}.${${nm}_PATCH_SRC})
+add_cdat_package_dependent(pygdal "" "" ON "CDAT_BUILD_GRAPHICS" OFF)
