@@ -1,1 +1,7 @@
-set(HDf5_deps ${pkgconfig_pkg} ${libxml2_pkg} ${libxslt_pkg} ${zlib_pkg})
+set(HDf5_deps ${pkgconfig_pkg} ${zlib_pkg})
+if (NOT CDAT_USE_SYSTEM_LIBXML2)
+    list(APPEND HDf5_deps ${libxml2_pkg})
+endif()
+if (NOT CDAT_USE_SYSTEM_LIBXSLT)
+    list(APPEND HDf5_deps ${libxslt_pkg})
+endif()

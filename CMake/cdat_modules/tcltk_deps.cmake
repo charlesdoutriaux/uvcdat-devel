@@ -1,1 +1,7 @@
-set(TclTk_deps ${pkgconfig_pkg} ${libxml2_pkg} ${libxslt_pkg} ${jpeg_pkg} ${png_pkg} ${tiff_pkg})
+set(TclTk_deps ${pkgconfig_pkg} ${jpeg_pkg} ${png_pkg} ${tiff_pkg})
+if (NOT CDAT_USE_SYSTEM_LIBXML2)
+    list(APPEND TclTk_deps ${libxml2_pkg})
+endif()
+if (NOT CDAT_USE_SYSTEM_LIBXSLT)
+    list(APPEND TclTk_deps ${libxslt_pkg})
+endif()

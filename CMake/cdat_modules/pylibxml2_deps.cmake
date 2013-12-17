@@ -1,1 +1,7 @@
-set(PYLIBXML2_deps ${pkgconfig_pkg} ${python_pkg} ${libxml2_pkg} ${libxslt_pkg})
+set(PYLIBXML2_deps ${pkgconfig_pkg} ${python_pkg})
+if (NOT CDAT_USE_SYSTEM_LIBXML2)
+    list(APPEND PYLIBXML2_deps ${libxml2_pkg})
+endif()
+if (NOT CDAT_USE_SYSTEM_LIBXSLT)
+    list(APPEND PYLIBXML2_deps ${libxslt_pkg})
+endif()
