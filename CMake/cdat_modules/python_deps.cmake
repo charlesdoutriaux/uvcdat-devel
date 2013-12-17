@@ -1,5 +1,6 @@
 set(Python_deps ${pkgconfig_pkg} ${readline_pkg} ${tcltk_pkg} ${hdf5_pkg} ${jpeg_pkg} ${png_pkg} ${tiff_pkg})
 if (NOT CDAT_USE_SYSTEM_LIBXML2)
+    message([INFOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO] Ok we are NOT using system lbxml2 ${CDAT_USE_SYSTEM_LIBXML2})
     list(APPEND Python_deps ${libxml2_pkg})
 endif()
 if (NOT CDAT_USE_SYSTEM_LIBXSLT)
