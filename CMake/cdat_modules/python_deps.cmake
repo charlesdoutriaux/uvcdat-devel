@@ -1,1 +1,11 @@
-set(Python_deps ${pkgconfig_pkg} ${readline_pkg} ${tcltk_pkg} ${hdf5_pkg} ${libxml2_pkg} ${libxslt_pkg} ${zlib_pkg} ${jpeg_pkg} ${png_pkg} ${tiff_pkg})
+set(Python_deps ${pkgconfig_pkg} ${readline_pkg} ${tcltk_pkg} ${hdf5_pkg} ${jpeg_pkg} ${png_pkg} ${tiff_pkg})
+if (CDAT_USE_SYSTEM_LIBXML2 == OFF)
+    list(APPEND Python_deps ${libxml2_pkg})
+endif()
+if (CDAT_USE_SYSTEM_LIBXSLT == OFF)
+    list(APPEND Python_deps ${libxslt_pkg})
+endif()
+if (CDAT_USE_SYSTEM_ZLIB == OFF)
+    list(APPEND Python_deps ${zlib_pkg})
+endif()
+
