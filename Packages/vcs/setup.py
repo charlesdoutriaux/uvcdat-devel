@@ -148,18 +148,19 @@ freetype_libs=c
 
 c=[]
 cairolibdir = os.popen("%s --libs-only-L cairo" % pkgconfig).read().strip().split("-L")[1:]
-c=[]
+c=["/lustre/atlas/world-shared/csc121/uvcdat/2014-04-17/Externals/lib",]
 for e in cairolibdir:
     c.append(e.strip())
 cairolibdir=c
 c=[]
+c=["/lustre/atlas/world-shared/csc121/uvcdat/2014-04-17/Externals/include",]
 cairoincdir = os.popen("%s --cflags-only-I cairo" % pkgconfig).read().strip().split("-I")[1:]
 for e in cairoincdir:
     c.append(e.strip())
 cairoincdir=c
 # Platform-specific modifications
 # added freetype for output of fonts
-c=[]
+c=["pixman-1","cairo","cairo-gobject","cairo-script-interpreter"]
 cairo_libs = os.popen("%s --libs-only-l cairo" % pkgconfig).read().strip().split("-l")[1:]
 for e in cairo_libs:
     c.append(e.strip())

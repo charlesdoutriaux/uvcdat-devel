@@ -520,7 +520,7 @@ class TimeSlicer:
                 w=float(subb[j][1]-subb[j][0])/nrm
 ##                 print j,w
                 m=numpy.ma.getmask(slab[sub[j]])
-                if m is not None:
+                if m is not numpy.ma.nomask:
                     msk[j]=msk[j]*(1.-m.astype(MV2.float))*w
                 else:
                     msk[j]=msk[j]*w
@@ -528,9 +528,7 @@ class TimeSlicer:
                     out[i]=numpy.ma.sum(msk*slab[sub[0]:sub[-1]+1].asma(),axis=0)
                     wout[i]=numpy.ma.sum(msk,axis=0)
                     if sum is False : out[i]=out[i]/wout[i]
-##                     print 'case long:',wout[i,0,0]
                 else:
-##                     print 'case 1:',out.shape,msk.shape,slab[sub[0]].asma().shape
                     out[i] = MV2.array(slab[sub[0]]).asma()
 ##                     if sum is False:
 ##                         out[i] = out[i]/msk
