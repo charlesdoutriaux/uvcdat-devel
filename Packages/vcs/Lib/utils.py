@@ -1,6 +1,96 @@
 # Adapted for numpy/ma/cdms2 by convertcdms.py
 import numpy
 import cdtime
+import warnings
+import vcs
+import boxfill
+import isofill
+import isoline
+import taylor
+import projection
+import fillarea
+import template
+import texttable
+import textorientation
+import line
+import unified1D
+import vector
+import marker
+import colormap
+
+def getfontname(number):
+  if not number in vcs.elements["fontNumber"]:
+    raise Exception,"Error font number not existing %i" % number
+  return vcs.elements["fontNumber"][number]
+
+def getfontnumber(name):
+  for i in vcs.elements["fontNumber"]:
+    if vcs.elements["fontNumber"][i]==name:
+      return i
+  raise Exception,"Font name not existing! %s" % name
+
+def process_src_element(code):
+  i = code.find("_")
+  typ = code[:i]
+  code=code[i+1:]
+  i = code.find("(")
+  nm=code[:i]
+  code=code[i+1:-1]
+  #try:
+  if 1:
+    if typ == "Gfb":
+      boxfill.process_src(nm,code)
+    elif typ == "Gfi":
+      isofill.process_src(nm,code)
+    elif typ == "Gi":
+      isoline.process_src(nm,code)
+    elif typ == "L":
+      dic = {}
+      sp = code.split(",")
+      for i in range(0,len(sp),2):
+        dic[eval(sp[i])]=eval(sp[i+1])
+      vcs.elements["list"][nm]=dic
+    elif typ == "Gtd":
+      taylor.process_src(nm,code)
+    elif typ=="Proj":
+      projection.process_src(nm,code)
+    elif typ=="Tf":
+      fillarea.process_src(nm,code)
+    elif typ=="P":
+      template.process_src(nm,code)
+    elif typ=="Tt":
+      texttable.process_src(nm,code)
+    elif typ=="To":
+      textorientation.process_src(nm,code)
+    elif typ=="Tl":
+      line.process_src(nm,code)
+    elif typ in ["GXy","GYx","GXY","GSp"]:
+      unified1D.process_src(nm,code,typ)
+    elif typ=="Gv":
+      vector.process_src(nm,code)
+    elif typ=="Tm":
+      marker.process_src(nm,code)
+    elif typ=="C":
+      colormap.process_src(nm,code)
+
+  #except Exception,err:
+  #  print "Processing error for %s,%s: %s" % (nm,typ,err)
+
+def listelements(typ):
+  if not typ in vcs.elements.keys():
+    raise Exception,"Error: '%s' is not a valid vcs element\nValid vcs elements are: %s" % (typ,vcs.elements.keys())
+  return vcs.elements[typ].keys()
+
+def scriptrun(script):
+  warnings.warn("PLEASE IMPLEMENT scriptrun!!!! (in utils.py)")
+  return
+
+def return_display_names():
+  warnings.warn("PLEASE IMPLEMENT return_display_names!!!! (in utils.py)")
+  return [""],[""]
+
+def getdotdirectory():
+  return ".uvcdat","UVCDAT_DIR"
 
 class VCSUtilsError (Exception):
     def __init__ (self, args=None):

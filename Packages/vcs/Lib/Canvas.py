@@ -26,7 +26,7 @@
 Normally, created by vcs.init()
 Contains the method plot.
 """
-import _vcs, string, types, signal, warnings
+import warnings
 import tempfile
 #import Tkinter
 from pauser import pause
@@ -35,11 +35,16 @@ import numpy.ma, MV2
 import numpy, cdutil
 from queries import *
 import boxfill, isofill, isoline, outfill, outline, taylor, meshfill, projection
-import xyvsy, yxvsx, xvsy, vector, scatter, continents, line, marker, fillarea
+import vector, continents, line, marker, fillarea
 import texttable, textorientation, textcombined, template, colormap
+import unified1D
 #import colormapgui as _colormapgui
 #import canvasgui as _canvasgui
 import displayplot
+import vtk
+from VTKPlots import VTKVCSBackend
+import time
+
 #import animationgui as _animationgui
 #import graphicsmethodgui as _graphicsmethodgui
 #import templateeditorgui as _templateeditorgui
@@ -56,7 +61,6 @@ import random
 import genutil
 from cdms2.grid import AbstractRectGrid
 import shutil
-from types import *
 import VCS_validation_functions
 import AutoAPI
 from xmldocs import plot_keywords_doc,graphics_method_core,axesconvert,xaxisconvert,yaxisconvert, plot_1D_input, plot_2D_input, plot_output, plot_2_1D_input, create_GM_input, get_GM_input, boxfill_output, isofill_output, isoline_output, yxvsx_output, xyvsy_output, xvsy_output, scatter_output, outfill_output, outline_output, plot_2_1D_options
@@ -66,20 +70,6 @@ gui_canvas_closed = 0
 canvas_closed = 0
 #import Pmw
 import vcsaddons
-
-from PyQt4 import QtGui,QtCore
-## class QAnimThread(QtCore.QThread):
-##     def __init__(self,parent,func,*args):
-##         QtCore.QThread.__init__(self,parent)
-##         self.func=func
-##         self.args=args
-##     def run(self):
-##         self.func(*self.args)
-        
-def showerror(msg):
-    d=QtGui.QErrorMessage()
-    d.showMessage(msg)
-    d.exec_()
 
 def dictionarytovcslist(dictionary,name):
     for k in dictionary.keys():
@@ -91,7 +81,6 @@ def dictionarytovcslist(dictionary,name):
 def _determine_arg_list(g_name, actual_args):
     "Determine what is in the argument list for plotting graphics methods" 
 
-##     print 'IN Determine arglist:',actual_args
     itemplate_name = 2
     igraphics_method = 3
     igraphics_option = 4
@@ -109,9 +98,9 @@ def _determine_arg_list(g_name, actual_args):
     args = actual_args
     found_slabs = 0
     for i in range(len(args)):
-       if (type(args[i]) == types.StringType):
+      if isinstance(args[i],str):
           argstring.append(args[i])
-       else:
+      else:
           try:
              possible_slab = cdms2.asVariable (args[i], 0)
              if not possible_slab.iscontiguous():
@@ -213,7 +202,7 @@ def _determine_arg_list(g_name, actual_args):
         if found_slabs!=arglist[igraphics_method].g_nslabs:
             raise vcsError, "%s requires %i slab(s)" % (arglist[igraphics_method].g_name,arglist[igraphics_method].g_nslabs)
     else:
-        if (string.lower(arglist[igraphics_method]) in ('scatter','vector','xvsy')):
+        if arglist[igraphics_method].lower() in ('scatter','vector','xvsy'):
             if found_slabs != 2:
                 raise vcsError, "Graphics method requires 2 slabs."
         elif arglist[igraphics_method].lower() == 'meshfill':
@@ -230,7 +219,7 @@ def _determine_arg_list(g_name, actual_args):
               (arglist[igraphics_method] == 'text')):
             if found_slabs != 0:
                 raise vcsError, "Continents or low-level primative methods requires 0 slabs."
-        elif string.lower(arglist[igraphics_method])=='default':
+        elif arglist[igraphics_method].lower()=='default':
             pass                            # Check later
         else:
             if found_slabs != 1:
@@ -426,48 +415,9 @@ class Canvas(object,AutoAPI.AutoAPI):
     animate_info =property(_getanimate_info,_setanimate_info)
     
         
-##     def __setattr__(self, name, value):
-##         if (name == 'mode'):
-##            try:
-##               if (isinstance(value, types.IntType)) and (value in range(2)):
-##                  self.__dict__['mode']=value
-##               else:
-##                  raise vcsError, "canvas setting mode failed, value = " + str(value)
-##            except:
-##               raise vcsError,  "canvas, " + name + ' must be 0 or 1.'
-##               raise
-##         elif (name == 'pause_time'):
-##            if (not isinstance(value, types.IntType)):
-##                raise vcsError, "Canvas' pause time must be integer."
-##            self.__dict__['pause_time'] = value
-##         elif (name == 'viewport'):
-##            try:
-##               if ((type(value) == types.ListType) and (len(value) == 4)):
-##                  self.__dict__['viewport'] = value
-##               else:
-##                  raise vcsError,  "viewport must be of type list and have four values ranging between [0,1]."
-##            except:
-##               raise vcsError,  "viewport must be of type list and have four values ranging between [0,1]."
-##               raise
-##         elif (name == 'worldcoordinate'):
-##            try:
-##               if ((type(value) == types.ListType) and (len(value) == 4)):
-##                  self.__dict__['worldcoordinate'] = value
-##               else:
-##                  raise vcsError,  "worldcoordinate must be of type list and have four ranging values."
-##            except:
-##               raise vcsError,  "worldcoordinate must be of type list and have four ranging values."
-##               raise
-##         elif (name == 'animate_info'):
-##            self.__dict__['animate_info'] = value
-##         elif (name == 'canvas_template_editor'):
-##            self.__dict__['canvas_template_editor'] = value
-##         elif (name == 'isplottinggridded'):
-##            self.__dict__['isplottinggridded'] = value
-##         elif (name == 'ratio'):
-##            self.__dict__['ratio'] = value
-##         else:
-##            raise vcsError, 'Invalid member for setattr in VCS canvas.'
+    def interact(self,*args,**kargs):
+      self.backend.interact(*args,**kargs)
+
     def _datawc_tv(self, tv, arglist):
         """The graphics method's data world coordinates (i.e., datawc_x1, datawc_x2,
         datawc_y1, and datawc_y2) will override the incoming variable's coordinates.
@@ -532,6 +482,9 @@ class Canvas(object,AutoAPI.AutoAPI):
            pass
 
         return tv
+
+    def savecontinentstype(self,value):
+      self._savedcontinentstype = value
 
     def _reconstruct_tv(self, arglist, keyargs):
         """Reconstruct a transient variable from the keyword arguments.
@@ -745,11 +698,11 @@ class Canvas(object,AutoAPI.AutoAPI):
             else:
                 contout = 0
         if (isinstance(arglist[GRAPHICS_METHOD],str) and (arglist[GRAPHICS_METHOD]) == 'meshfill') or ((xdim>=0 and ydim>=0 and (contout>=1) and (contout<12))):
-            self.canvas.setcontinentstype(contout)
-            self.canvas.savecontinentstype(contout)
+            self.setcontinentstype(contout)
+            self.savecontinentstype(contout)
         else:
-            self.canvas.setcontinentstype(0)
-            self.canvas.savecontinentstype(0)
+            self.setcontinentstype(0)
+            self.savecontinentstype(0)
 
         # Reverse axis direction if necessary
         xrev = keyargs.get('xrev',0)
@@ -811,7 +764,7 @@ class Canvas(object,AutoAPI.AutoAPI):
     # using the "update" function.                                              #
     #                                                                           #
     #############################################################################
-    def __init__(self, gui = 0, mode = 1, pause_time=0, call_from_gui=0, size=None):
+    def __init__(self, gui = 0, mode = 1, pause_time=0, call_from_gui=0, size=None, backend = "vtk"):
         #############################################################################
         #                                                                           #
         # The two Tkinter calls were needed for earlier versions of CDAT using      #
@@ -848,6 +801,15 @@ class Canvas(object,AutoAPI.AutoAPI):
         #                                                                           #
         #############################################################################
 
+        self._canvas_id = vcs.next_canvas_id
+        vcs.next_canvas_id+=1
+        self.colormap = "default"
+        self.backgroundcolor = 255,255,255
+        ## default size for bg
+        self.bgX = 814
+        self.bgY = 606
+        ## displays plotted
+        self.display_names = []
         self.info = AutoAPI.Info(self)
         self.info.expose=["plot", "boxfill", "isofill", "isoline", "outfill", "outline", "scatter", "xvsy", "xyvsy", "yxvsx", "createboxfill", "getboxfill", "createisofill", "getisofill", "createisoline", "getisoline", "createyxvsx", "getyxvsx", "createxyvsy", "getxyvsy", "createxvsy", "getxvsy", "createscatter", "getscatter", "createoutfill", "getoutfill", "createoutline", "getoutline"]
         ospath = os.environ["PATH"]
@@ -865,7 +827,7 @@ class Canvas(object,AutoAPI.AutoAPI):
         import time
 ##         from tkMessageBox import showerror
 
-        is_canvas = len(_vcs.return_display_names()[0])
+        is_canvas = len(vcs.return_display_names()[0])
 
         if gui_canvas_closed == 1:
            showerror( "Error Message to User", "There can only be one VCS Canvas GUI opened at any given time and the VCS Canvas GUI cannot operate with other VCS Canvases.")
@@ -905,17 +867,25 @@ class Canvas(object,AutoAPI.AutoAPI):
         else:
             raise Exception, 'Unknown size: %s' % size
 
-        self.size = size
+        self.size = psize
 
         self.mode = mode
+        self._animate_info=[]
         self.pause_time = pause_time
-        self._canvas =_vcs.init( self.winfo_id,psize ) # connect the canvas to the GUI
+        self._canvas = vcs
         self.viewport =[0,1,0,1]
         self.worldcoordinate = [0,1,0,1]
         self._animate = animate_obj( self )
         self._dotdir,self._dotdirenv = self._canvas.getdotdirectory()
         if ( (is_canvas == 0) and (gui == 1) and (gui_canvas_closed == 0) ): gui_canvas_closed = 1
-
+        if backend == "vtk":
+          self.backend = VTKVCSBackend(self)
+        elif isinstance(backend,vtk.vtkRenderWindow):
+          self.backend = VTKVCSBackend(self, renWin = backend)
+        else:
+          warnings.warn("Unknown backend type: '%s'\nAssiging 'as is' to backend, no warranty about anything working from this point on" % backend)
+          self.backend=backend
+        self._animate = self.backend.Animate( self )
 ## Initial.attributes is being called in main.c, so it is not needed here!
 ## Actually it is for taylordiagram graphic methods....
 ###########################################################################################
@@ -932,9 +902,9 @@ class Canvas(object,AutoAPI.AutoAPI):
                self._scriptrun( os.path.join(*pth))
            except:
                pass
+           self._dotdir,self._dotdirenv = vcs.getdotdirectory()
            self._scriptrun( os.path.join(os.environ['HOME'], self._dotdir, 'initial.attributes'))
 	called_initial_attributes_flg = 1
-        self.animate_info=[]
         self.canvas_template_editor=None
         self.ratio=0
         self._user_actions_names=['Clear Canvas','Close Canvas','Show arguments passsed to user action']
@@ -945,7 +915,7 @@ class Canvas(object,AutoAPI.AutoAPI):
     # Update wrapper function for VCS.                                          #
     #                                                                           #
     #############################################################################
-    def update(self, *args):
+    def update(self, *args, **kargs):
         """
  Function: update                   # Update the VCS Canvas.
 
@@ -970,16 +940,8 @@ class Canvas(object,AutoAPI.AutoAPI):
     a.update()                             # Update the changes manually
 """
 
-        finish_queued_X_server_requests( self )
-        self.canvas.BLOCK_X_SERVER()
-
-        a = apply(self.canvas.updatecanvas, args)
-        self.flush() # update the canvas by processing all the X events
-        self.backing_store()
-        pause (self.pause_time)
-
-        self.canvas.UNBLOCK_X_SERVER()
-        return a
+        
+        return self.backend.update(*args,**kargs)
 
     #############################################################################
     #                                                                           #
@@ -1252,32 +1214,30 @@ class Canvas(object,AutoAPI.AutoAPI):
                         
         return
     
-    def check_name_source(self,name,source,type):
-        elts = self.listelements(type)
+    def check_name_source(self,name,source,typ):
+        elts = self.listelements(typ)
         if name is None:
-            rnd = random.randint(0,100000)
-            name = '__%s_%i' % (type[:4],rnd)
+            rnd = random.randint(0,1000000000000000)
+            name = '__%s_%i' % (typ,rnd)
             while name in elts:
-                rnd = random.randint(0,100000)
-                name = '__%s_%i' % (type[:4],rnd)
+                rnd = random.randint(0,1000000000000000)
+                name = '__%s_%i' % (typ,rnd)
         if not isinstance(name,str):
-            raise vcsError, '%s object name must be a string or %s name' % (type,type)
-        elif len(name)>16:
-                raise vcsError,'%s object name must be at most 16 character long' % (type)
+            raise vcsError, '%s object name must be a string or %s name' % (typ,typ)
 
         if not isinstance(source,str):
-            exec("ok = vcs.is%s(source)" % (type,))
+            exec("ok = vcs.is%s(source)" % (typ,))
         else:
             ok=0
         if (not isinstance(source,str)) and ok==0:
-            raise vcsError,'Error %s object source must be a string or a %s object' % (type,type)
+            raise vcsError,'Error %s object source must be a string or a %s object' % (typ,typ)
         elif ok:
             source=source.name
 
         if name in elts:
-            raise vcsError, "Error %s object named %s already exists" % (type,name)
-        if not source in elts:
-            raise vcsError, "Error source %s object (%s) does not exist!" % (type,name)
+            raise vcsError, "Error %s object named %s already exists" % (typ,name)
+        if not source in elts and typ!="display":
+            raise vcsError, "Error source %s object (%s) does not exist!" % (typ,name)
         return name,source
     
     #############################################################################
@@ -1308,7 +1268,7 @@ class Canvas(object,AutoAPI.AutoAPI):
 """
         name,source = self.check_name_source(name,source,'template')
 
-        return template.P(self, name, source, 0)
+        return template.P(name, source)
 
     def gettemplate(self, Pt_name_src='default'):
         """
@@ -1330,11 +1290,12 @@ class Canvas(object,AutoAPI.AutoAPI):
     templt2=a.gettemplate('quick')      # templt2 contains 'quick' template
 """
         # Check to make sure the argument passed in is a STRING
-        if (type(Pt_name_src) != types.StringType):
+        if not isinstance(Pt_name_src,str):
            raise vcsError, 'The argument must be a string.'
 
-        Pt_name = None
-        return template.P(self, Pt_name, Pt_name_src, 1)
+        if not Pt_name_src in vcs.elements["template"].keys():
+          raise ValueError, "template '%s' does not exists" % Pt_name_src
+        return vcs.elements["template"][Pt_name_src]
 
     #############################################################################
     #                                                                           #
@@ -1365,7 +1326,7 @@ class Canvas(object,AutoAPI.AutoAPI):
 """
 
         name,source = self.check_name_source(name,source,'projection')
-        return projection.Proj(self, name, source, 0)
+        return projection.Proj(name, source)
 
     def getprojection(self,Proj_name_src='default'):
         """
@@ -1390,13 +1351,12 @@ class Canvas(object,AutoAPI.AutoAPI):
 """
 
         # Check to make sure the argument passed in is a STRING
-        if (type(Proj_name_src) != types.StringType):
+        if not isinstance(Proj_name_src,str):
            raise vcsError, 'The argument must be a string.'
 
-        Proj_name = None
-        p=projection.Proj(self, Proj_name, Proj_name_src, 1)
-        if Proj_name_src!='default' : p.type=p.type
-        return p
+        if not Proj_name_src in vcs.elements["projection"]:
+          raise vcsError,"No such projection '%s'" % Proj_name_src
+        return vcs.elements["projection"][Proj_name_src]
 
     #############################################################################
     #                                                                           #
@@ -1446,7 +1406,7 @@ Options:::
 """
 
         name,source = self.check_name_source(name,source,'boxfill')
-        return boxfill.Gfb(self, name, source, 0)
+        return boxfill.Gfb(name, source)
     createboxfill.__doc__ = createboxfill.__doc__ % (plot_keywords_doc,graphics_method_core,axesconvert, create_GM_input, boxfill_output) 
 
     def getboxfill(self,Gfb_name_src='default'):
@@ -1489,11 +1449,12 @@ Options:::
 """
 
         # Check to make sure the argument passed in is a STRING
-        if (type(Gfb_name_src) != types.StringType):
+        if not isinstance(Gfb_name_src,str):
            raise vcsError, 'The argument must be a string.'
 
-        Gfb_name = None
-        return boxfill.Gfb(self, Gfb_name, Gfb_name_src, 1)
+        if not Gfb_name_src in vcs.elements["boxfill"].keys():
+          raise "The boxfill method: '%s' does not seem to exist"
+        return vcs.elements["boxfill"][Gfb_name_src]
     getboxfill.__doc__ = getboxfill.__doc__ % (plot_keywords_doc,graphics_method_core,axesconvert, get_GM_input, boxfill_output) 
    
 
@@ -1575,39 +1536,33 @@ Options:::
 """
         
         name,source = self.check_name_source(name,source,'taylordiagram')
-        srcfound=0
-        for m in vcs.taylordiagrams:
-            if m.name==name :
-                raise vcsError, 'Error creating taylordiagram graphic method: '+Gtd_name+' already exist'
-            if m.name==source:
-                srcfound=1
-        if not srcfound:
-            raise vcsError, 'Error creating taylordiagram graphic method '+Gtd_name_src+' does not exist'
+        if name in vcs.elements["taylordiagram"].keys():
+          raise vcsError, 'Error creating taylordiagram graphic method: '+Gtd_name+' already exist'
+        if not source in vcs.elements["taylordiagram"].keys():
+          raise vcsError, 'Error creating taylordiagram graphic method '+Gtd_name_src+' does not exist'
         n=vcs.taylor.Gtd()
         n._name=name
-        for m in vcs.taylordiagrams:
-            if m.name==source :
-                n.max=m.max
-                n.quadrans=m.quadrans
-                n.skillValues=m.skillValues
-                n.skillColor=m.skillColor
-                n.skillDrawLabels=m.skillDrawLabels
-                n.skillCoefficient=m.skillCoefficient
-                n.detail=m.detail
-                n.referencevalue=m.referencevalue
-                n.Marker=copy.deepcopy(m.Marker)
-                n.arrowlength=m.arrowlength
-                n.arrowangle=m.arrowangle
-                n.arrowbase=m.arrowbase
-                n.xticlabels1=m.xticlabels1
-                n.xmtics1=m.xmtics1
-                n.yticlabels1=m.yticlabels1
-                n.ymtics1=m.xmtics1
-                n.cticlabels1=m.cticlabels1
-                n.cmtics1=m.xmtics1
+        m = vcs.elements["taylordiagram"][source]
+        n.max=m.max
+        n.quadrans=m.quadrans
+        n.skillValues=m.skillValues
+        n.skillColor=m.skillColor
+        n.skillDrawLabels=m.skillDrawLabels
+        n.skillCoefficient=m.skillCoefficient
+        n.detail=m.detail
+        n.referencevalue=m.referencevalue
+        n.Marker=copy.deepcopy(m.Marker)
+        n.arrowlength=m.arrowlength
+        n.arrowangle=m.arrowangle
+        n.arrowbase=m.arrowbase
+        n.xticlabels1=m.xticlabels1
+        n.xmtics1=m.xmtics1
+        n.yticlabels1=m.yticlabels1
+        n.ymtics1=m.xmtics1
+        n.cticlabels1=m.cticlabels1
+        n.cmtics1=m.xmtics1
                 
-                break
-        vcs.taylordiagrams.append(n)
+        vcs.elements["taylordiagram"][name]=n
         n.Marker.equalize()
         return n
 
@@ -1635,7 +1590,7 @@ Options:::
         
         
         # Check to make sure the argument passed in is a STRING
-        if (type(Gtd_name_src) != types.StringType):
+        if not isinstance(Gtd_name_src,str):
             raise vcsError, 'The argument must be a string.'
         
         for m in vcs.taylordiagrams:
@@ -1645,7 +1600,9 @@ Options:::
                 #vcs.taylordiagrams.append(n)
                 n.Marker.equalize()
                 return n
-        raise vcsError,'Error, taylordiagram \"'+Gtd_name_src+'\" does not exist'
+        warnings.warn("Possible implementation issue here trying to access %s" % (Gtd_name_src))
+        return 
+        #raise vcsError,'Error, taylordiagram \"'+Gtd_name_src+'\" does not exist'
     
     def taylordiagram(self, *args, **parms):
         """
@@ -1700,7 +1657,7 @@ Options:::
 """
 
         name,source = self.check_name_source(name,source,'meshfill')
-        return meshfill.Gfm(self, name, source, 0)
+        return meshfill.Gfm(name, source)
 
     def getmeshfill(self,Gfm_name_src='default'):
         """
@@ -1725,11 +1682,13 @@ Options:::
 """
 
         # Check to make sure the argument passed in is a STRING
-        if (type(Gfm_name_src) != types.StringType):
+        if not isinstance(Gfm_name_src,str):
            raise vcsError, 'The argument must be a string.'
 
-        Gfm_name = None
-        return meshfill.Gfm(self, Gfm_name, Gfm_name_src, 1)
+        if not Gfm_name_src in vcs.elements["meshfill"]:
+          raise ValueError,"meshfill '%s' does not exists" % Gfm_name_src
+
+        return vcs.elements["meshfill"][Gfm_name_src]
 
    
 
@@ -1958,8 +1917,7 @@ Options:::
 """
 
         name,source = self.check_name_source(name,source,'isofill')
-
-        return isofill.Gfi(self, name, source, 0)
+        return isofill.Gfi(name, source)
     createisofill.__doc__ = createisofill.__doc__ % (plot_keywords_doc, graphics_method_core, axesconvert, create_GM_input, isofill_output)
 
     def getisofill(self,Gfi_name_src='default'):
@@ -2003,11 +1961,12 @@ Options:::
 """
 
         # Check to make sure the argument passed in is a STRING
-        if (type(Gfi_name_src) != types.StringType):
+        if not isinstance(Gfi_name_src,str):
            raise vcsError, 'The argument must be a string.'
 
-        Gfi_name = None
-        return isofill.Gfi(self, Gfi_name, Gfi_name_src, 1)
+        if not Gfi_name_src in vcs.elements["isofill"]:
+          raise ValueError,"The isofill '%s' does not exists" % Gfi_name_src
+        return vcs.elements["isofill"][Gfi_name_src]
     getisofill.__doc__ = getisofill.__doc__ % (plot_keywords_doc,graphics_method_core,axesconvert, get_GM_input, isofill_output)
 
     def isofill(self, *args, **parms):
@@ -2102,7 +2061,7 @@ Options:::
 """
 
         name,source = self.check_name_source(name,source,'isoline')
-        return isoline.Gi(self, name, source, 0)
+        return isoline.Gi(name, source)
     createisoline.__doc__ = createisoline.__doc__ % (plot_keywords_doc,graphics_method_core,axesconvert, create_GM_input, isoline_output)
 
     def getisoline(self,Gi_name_src='default'):
@@ -2145,11 +2104,13 @@ Options:::
 """
 
         # Check to make sure the argument passed in is a STRING
-        if (type(Gi_name_src) != types.StringType):
+        if not isinstance(Gi_name_src,str):
            raise vcsError, 'The argument must be a string.'
 
-        Gi_name = None
-        return isoline.Gi(self, Gi_name, Gi_name_src, 1)
+        if not Gi_name_src in vcs.elements["isoline"]:
+           raise ValueError,"The isoline '%s' does not exists" % Gi_name_src
+
+        return vcs.elements["isoline"][Gi_name_src]
     getisoline.__doc__ = getisoline.__doc__ % (plot_keywords_doc,graphics_method_core,axesconvert, get_GM_input, isoline_output)
 
     def isoline(self, *args, **parms):
@@ -2288,7 +2249,7 @@ Options:::
 """
 
         # Check to make sure the argument passed in is a STRING
-        if (type(Go_name_src) != types.StringType):
+        if not isinstance(Go_name_src,str):
            raise vcsError, 'The argument must be a string.'
 
         Go_name = None
@@ -2432,7 +2393,7 @@ Options:::
 """
 
         # Check to make sure the argument passed in is a STRING
-        if (type(Gfo_name_src) != types.StringType):
+        if not isinstance(Gfo_name_src,str):
            raise vcsError, 'The argument must be a string.'
 
         Gfo_name = None
@@ -2481,6 +2442,19 @@ Options:::
         return self.__plot(arglist, parms)
     outfill.__doc__ = outfill.__doc__ % (plot_keywords_doc,graphics_method_core,axesconvert,plot_2D_input, plot_output)
 
+    def createoneD(self,name=None,source='default'):
+        name,source = self.check_name_source(name,source,'oned')
+        return unified1D.G1d(name,source)
+    def getoneD(self,name):
+        # Check to make sure the argument passed in is a STRING
+        if not isinstance(name,str):
+           raise vcsError, 'The argument must be a string.'
+
+        if not name in vcs.elements["oned"]:
+          raise ValueError,"The oneD '%s' graphics method does not exists" % name
+        return vcs.elements["oned"][name]
+
+    
     #############################################################################
     #                                                                           #
     # Xyvsy functions for VCS.                                                  #
@@ -2529,9 +2503,13 @@ Options:::
 
 """
 
+        warnings.warn("the createxyvsy method is now obsolete, 1D graphics method have been unified, to avoid your code breaking in the future please change it to use: createoneD and set the 'flip' option to True")
         name,source = self.check_name_source(name,source,'xyvsy')
 
-        return xyvsy.GXy(self, name, source, 0)
+        gm = unified1D.G1d(name+"_xyvsy", source+"_xyvsy")
+        gm.flip = True
+        vcs.elements["xyvsy"][name]=gm
+        return gm
     createxyvsy.__doc__ = createxyvsy.__doc__ % (plot_keywords_doc, graphics_method_core, axesconvert, create_GM_input, xyvsy_output) 
 
     def getxyvsy(self,GXy_name_src='default'):
@@ -2575,11 +2553,12 @@ Options:::
 """
 
         # Check to make sure the argument passed in is a STRING
-        if (type(GXy_name_src) != types.StringType):
+        if not isinstance(GXy_name_src,str):
            raise vcsError, 'The argument must be a string.'
 
-        GXy_name = None
-        return xyvsy.GXy(self, GXy_name, GXy_name_src, 1)
+        if not GXy_name_src in vcs.elements["xyvsy"]:
+          raise ValueError,"The xyvsy '%s' graphics method does not exists" % GXy_name_src
+        return vcs.elements["xyvsy"][GXy_name_src]
     getxyvsy.__doc__ = getxyvsy.__doc__ % (plot_keywords_doc, graphics_method_core, axesconvert, get_GM_input, xyvsy_output) 
 
     def xyvsy(self, *args, **parms):
@@ -2672,9 +2651,13 @@ Options:::
 
 """
 
+        warnings.warn("the createyxvsx method is now obsolete, 1D graphics method have been unified,to avoid your code breaking in the future please change it to use: createoneD")
         name,source = self.check_name_source(name,source,'yxvsx')
 
-        return yxvsx.GYx(self, name, source, 0)
+        gm = unified1D.G1d(name+"_yxvsx", source+"_yxvsx")
+        vcs.elements["yxvsx"][name]=gm
+        return gm
+
     createyxvsx.__doc__ = createyxvsx.__doc__ % (plot_keywords_doc, graphics_method_core, axesconvert, create_GM_input, yxvsx_output) 
 
     def getyxvsx(self,GYx_name_src='default'):
@@ -2718,11 +2701,12 @@ Options:::
 """
 
         # Check to make sure the argument passed in is a STRING
-        if (type(GYx_name_src) != types.StringType):
+        if not isinstance(GYx_name_src,str):
            raise vcsError, 'The argument must be a string.'
+        if not GYx_name_src in vcs.elements["yxvsx"]:
+          raise ValueError,"The Yxvsx '%s' graphics method does not exists" % GYx_name_src
 
-        GYx_name = None
-        return yxvsx.GYx(self, GYx_name, GYx_name_src, 1)
+        return vcs.elements["yxvsx"][GYx_name_src]
     getyxvsx.__doc__ = getyxvsx.__doc__ % (plot_keywords_doc, graphics_method_core, axesconvert, get_GM_input, yxvsx_output) 
 
     def yxvsx(self, *args, **parms):
@@ -2814,9 +2798,12 @@ Options:::
 
 """
 
+        warnings.warn("the createxvsy method is now obsolete, 1D graphics method have been unified,to avoid your code breaking in the future please change it to use: createoneD")
         name,source = self.check_name_source(name,source,'xvsy')
+        gm = unified1D.G1d(name+"_xvsy", source+"_xvsy")
+        vcs.elements["xvsy"][name]=gm
+        return gm
 
-        return xvsy.GXY(self, name, source, 0)
     createxvsy.__doc__ = createxvsy.__doc__ % (plot_keywords_doc, graphics_method_core, axesconvert, create_GM_input, xvsy_output) 
 
     def getxvsy(self,GXY_name_src='default'):
@@ -2861,11 +2848,13 @@ Options:::
 """
 
         # Check to make sure the argument passed in is a STRING
-        if (type(GXY_name_src) != types.StringType):
+        if not isinstance(GXY_name_src,str):
            raise vcsError, 'The argument must be a string.'
+        if not GXY_name_src in vcs.elements["xvsy"]:
+          raise ValueError,"The xvsy '%s' graphics method does not exists" % GXY_name_src
 
-        GXY_name = None
-        return xvsy.GXY(self, GXY_name, GXY_name_src, 1)
+        return vcs.elements["xvsy"][GXY_name_src]
+
     getxvsy.__doc__ = getxvsy.__doc__ % (plot_keywords_doc, graphics_method_core, axesconvert, get_GM_input, xvsy_output) 
 
     def xvsy(self, *args, **parms):
@@ -2938,7 +2927,7 @@ Options:::
 
         name,source = self.check_name_source(name,source,'vector')
 
-        return vector.Gv(self, name, source, 0)
+        return vector.Gv(name, source)
 
     def getvector(self,Gv_name_src='default'):
         """
@@ -2963,11 +2952,11 @@ Options:::
 """
 
         # Check to make sure the argument passed in is a STRING
-        if (type(Gv_name_src) != types.StringType):
+        if not isinstance(Gv_name_src,str):
            raise vcsError, 'The argument must be a string.'
-
-        Gv_name = None
-        return vector.Gv(self, Gv_name, Gv_name_src, 1)
+        if not Gv_name_src in vcs.elements["vector"]:
+          raise ValueError, "The vector '%s' does not exist" % Gv_name_src
+        return vcs.elements["vector"][Gv_name_src]
  
     def vector(self, *args, **parms):
         """
@@ -3038,9 +3027,12 @@ Options:::
 
 """
 
+        warnings.warn("the createscatter method is now obsolete, 1D graphics method have been unified,to avoid your code breaking in the future please change it to use: createoneD")
         name,source = self.check_name_source(name,source,'scatter')
 
-        return scatter.GSp(self, name, source, 0)
+        gm = unified1D.G1d(name+"_scatter", source+"_scatter")
+        vcs.elements["scatter"][name]=gm
+        return gm
     createscatter.__doc__ = createscatter.__doc__ % (plot_keywords_doc,graphics_method_core,axesconvert, create_GM_input, scatter_output)
 
     def getscatter(self,GSp_name_src='default'):
@@ -3085,11 +3077,12 @@ Options:::
 """
 
         # Check to make sure the argument passed in is a STRING
-        if (type(GSp_name_src) != types.StringType):
+        if not isinstance(GSp_name_src,str):
            raise vcsError, 'The argument must be a string.'
 
-        GSp_name = None
-        return scatter.GSp(self, GSp_name, GSp_name_src, 1)
+        if not GSp_name_src in vcs.elements["scatter"]:
+          raise ValueError,"The scatter '%s' graphics method does not exists" % GSp_name_src
+        return vcs.elements["scatter"][GSp_name_src]
     getscatter.__doc__ = getscatter.__doc__ % (plot_keywords_doc,graphics_method_core,axesconvert, get_GM_input, scatter_output)
 
     def scatter(self, *args, **parms):
@@ -3190,7 +3183,7 @@ Options:::
 """
 
         # Check to make sure the argument passed in is a STRING
-        if (type(Gcon_name_src) != types.StringType):
+        if not isinstance(Gcon_name_src,str):
            raise vcsError, 'The argument must be a string.'
 
         Gcon_name = None
@@ -3258,7 +3251,7 @@ Options:::
 
         name,source = self.check_name_source(name,source,'line')
 
-        ln = line.Tl(self, name, source, 0)
+        ln = line.Tl(name, source)
         if (ltype is not None):
             ln.type = ltype
         if (width is not None):
@@ -3273,8 +3266,9 @@ Options:::
             ln.viewport = self.viewport
         if (worldcoordinate is not None):
             ln.worldcoordinate = worldcoordinate
-        elif source=='default':
-            ln.worldcoordinate = self.worldcoordinate
+    # C. Doutriaux commented out the following seems too dangerous, let the user pass it
+    #    elif source=='default':
+    #        ln.worldcoordinate = self.worldcoordinate
         if (x is not None):
             ln.x = x
         if (y is not None):
@@ -3314,11 +3308,12 @@ Options:::
 """
 
         # Check to make sure the argument passed in is a STRING
-        if (type(name) != types.StringType):
+        if not isinstance(name,str):
            raise vcsError, 'The argument must be a string.'
 
-        Tl_name = None
-        ln = line.Tl(self, Tl_name, name, 1)
+        if not name in vcs.elements["line"]:
+          raise ValueError,"The line '%s' does not exists" % name
+        ln = vcs.elements["line"][name]
         if ltype is not None and ln.name!='default':
             ln.type=ltype
         if width is not None and ln.name!='default':
@@ -3412,7 +3407,7 @@ Options:::
                   y=[0,10,20,30,40,50] )      # Create instance of line object 'red'
     a.line(ln)                          # Plot using specified line object
 """
-        if (name is None) or (type(name) != types.StringType):
+        if (name is None) or (not isinstance(name,str)):
             raise vcsError, 'Must provide string name for the line.'
         else:
             lo = self.listelements('line')
@@ -3473,7 +3468,7 @@ Options:::
 
         name,source = self.check_name_source(name,source,'marker')
 
-        mrk = marker.Tm(self, name, source, 0)
+        mrk = marker.Tm(name, source)
         if (mtype is not None):
             mrk.type = mtype
         if (size is not None):
@@ -3530,11 +3525,12 @@ Options:::
 """
 
         # Check to make sure the argument passed in is a STRING
-        if (type(name) != types.StringType):
+        if not isinstance(name,str):
            raise vcsError, 'The argument must be a string.'
 
-        Tm_name = None
-        mrk = marker.Tm(self, Tm_name, name, 1)
+        if not name in vcs.elements["marker"]:
+          raise ValueError,"The marker object '%s' does not exists"
+        mrk = vcs.elements["marker"][name]
         if (mtype is not None) and (mrk.name != "default"):
             mrk.type = mtype
         if (size is not None) and (mrk.name != "default"):
@@ -3595,7 +3591,7 @@ Options:::
                   y=[0,10,20,30,40,50] )      # Create instance of marker object 'red'
     a.marker(mrk)                          # Plot using specified marker object
 """
-        if (name is None) or (type(name) != types.StringType):
+        if (name is None) or (not isinstance(name,str)):
             raise vcsError, 'Must provide string name for the marker.'
         else:
             lo = self.listelements('marker')
@@ -3655,7 +3651,7 @@ Options:::
 
         name,source = self.check_name_source(name,source,'fillarea')
 
-        fa = fillarea.Tf(self, name, source, 0)
+        fa = fillarea.Tf(name, source)
         if (style is not None):
             fa.style = style
         if (index is not None):
@@ -3712,11 +3708,12 @@ Options:::
 """
 
         # Check to make sure the argument passed in is a STRING
-        if (type(name) != types.StringType):
+        if not isinstance(name,str):
            raise vcsError, 'The argument must be a string.'
+        if not name in vcs.elements["fillarea"].keys():
+            raise vcsError,"Fillarea '%s' doe not exists" % (name)
 
-        Tf_name = None
-        fa = fillarea.Tf(self, Tf_name, name, 1)
+        fa = vcs.elements["fillarea"][name]
         if (style is not None) and (fa.name != "default"):
             fa.style = style
         if (index is not None) and (fa.name != "default"):
@@ -3778,7 +3775,7 @@ Options:::
                   y=[0,10,20,30,40,50] )      # Create instance of fillarea object 'red'
     a.fillarea(fa)                          # Plot using specified fillarea object
 """
-        if (name is None) or (type(name) != types.StringType):
+        if (name is None) or (not isinstance(name,str)):
             raise vcsError, 'Must provide string name for the fillarea.'
         else:
             lo = self.listelements('fillarea')
@@ -3838,7 +3835,7 @@ Options:::
 
         name,source = self.check_name_source(name,source,'texttable')
 
-        tt = texttable.Tt(self, name, source, 0)
+        tt = texttable.Tt(name, source)
         try:
            if (font is not None):
               tt.font = font
@@ -3901,11 +3898,12 @@ Options:::
 """
 
         # Check to make sure the argument passed in is a STRING
-        if (type(name) != types.StringType):
+        if not isinstance(name,str):
            raise vcsError, 'The argument must be a string.'
 
-        Tt_name = None
-        return texttable.Tt(self, Tt_name, name, 1 )
+        if not name in vcs.elements["texttable"]:
+          raise ValueError,"The texttable '%s' does not exists" % name
+        return vcs.elements["texttable"][name]
 ##         try:
 ##            tt = texttable.Tt(self, Tt_name, name, 1)
 ##            if (font is not None) and (tt.name != "default"):
@@ -3966,7 +3964,7 @@ Options:::
 
         name,source = self.check_name_source(name,source,'textorientation')
 
-        return textorientation.To(self, name, source, 0)
+        return textorientation.To(name, source)
 
     def gettextorientation(self,To_name_src='default'):
         """
@@ -3992,11 +3990,13 @@ Options:::
 """
 
         # Check to make sure the argument passed in is a STRING
-        if (type(To_name_src) != types.StringType):
+        if not isinstance(To_name_src,str):
            raise vcsError, 'The argument must be a string.'
 
-        To_name = None
-        return textorientation.To(self, To_name, To_name_src, 1)
+        if not To_name_src in vcs.elements["textorientation"]:
+          raise ValueError,"The textorientation '%s' does not exists" % To_name_src
+        return vcs.elements["textorientation"][To_name_src]
+
 
     #############################################################################
     #                                                                           #
@@ -4033,7 +4033,7 @@ Options:::
         Tt_name,Tt_source = self.check_name_source(Tt_name,Tt_source,'texttable')
         To_name,To_source = self.check_name_source(To_name,To_source,'textorientation')
 
-        tc = textcombined.Tc(self, Tt_name, Tt_source, To_name, To_source, 0)
+        tc = textcombined.Tc(Tt_name, Tt_source, To_name, To_source)
         if (font is not None):
             tc.font = font
         if (spacing is not None):
@@ -4103,14 +4103,16 @@ Example of Use:
 
 
         # Check to make sure the arguments passed in are a STRINGS
-        if (type(Tt_name_src) != types.StringType):
+        if not isinstance(Tt_name_src,str):
             raise vcsError, 'The first argument must be a string.'
-        if (type(To_name_src) != types.StringType):
+        if not isinstance(To_name_src,str):
             raise vcsError, 'The second argument must be a string.'
         
-        Tt_name = None
-        To_name = None
-        tc = textcombined.Tc(self,Tt_name,Tt_name_src,To_name,To_name_src,1)
+        tc = vcs.elements["textcombined"].get("%s:::%s" % (Tt_name_src,To_name_src),None)
+        if tc is None:
+          raise Exception,"No usch text combined: %s:::%s" % (Tt_name_src,To_name_src)
+
+
         if (string is not None) and (tc.Tt_name != "default"):
             tc.string = string
         if (font is not None) and (tc.Tt_name != "default"):
@@ -4286,7 +4288,7 @@ Example of use:
                   y=[0,10,20,30,40,50] )      # Create instance of texttable object 'red'
     a.texttable(tt)                          # Plot using specified texttable object
 """
-        if (Tt_name is None) or (type(Tt_name) != types.StringType):
+        if (Tt_name is None) or (not isinstance(Tt_name,str)):
             raise vcsError, 'Must provide string name for the texttable.'
         else:
             lot = self.listelements('texttable')
@@ -4331,15 +4333,15 @@ Example of use:
                        'xbounds','ybounds','xname','yname','xunits','yunits','xweights','yweights',
                        'comment1','comment2','comment3','comment4','hms','long_name','zaxis',
                        'zarray','zname','zunits','taxis','tarray','tname','tunits','waxis','warray',
-                       'wname','wunits','bg','ratio']
+                       'wname','wunits','bg','ratio','donotstoredisplay']
 
 
 
-    def replot(self):
-        """ Clears and plots with last used plot arguments
-        """
-        self.clear()
-        self.plot(*self.__last_plot_actual_args, **self.__last_plot_keyargs)
+    #def replot(self):
+    #    """ Clears and plots with last used plot arguments
+    #    """
+    #    self.clear()
+    #    self.plot(*self.__last_plot_actual_args, **self.__last_plot_keyargs)
 
     ###########################################################################
     #                                                                         #
@@ -4467,12 +4469,10 @@ Options:::
         self.__last_plot_actual_args = actual_args
         self.__last_plot_keyargs = keyargs
 
-        finish_queued_X_server_requests( self )
         passed_var = keyargs.get("variable",None)
         arglist = _determine_arg_list ( None, actual_args )
         if passed_var is not None:
             arglist[0] = cdms2.asVariable(passed_var)
-        self.canvas.BLOCK_X_SERVER()
 
         # Prevent the varglist from duplicating its contents if the GUI Canvas is in use  
         try:  
@@ -4481,35 +4481,34 @@ Options:::
         except:
             sal = 1
 
-        try:
-            if (self.canvas_gui.top_parent.menu.vcs_canvas_gui_settings_flg == 1): # Must be from VCDAT
-               self.canvas_gui.dialog.dialog.configure( title = ("Visualization and Control System (VCS) GUI"))
-        except: 
-            # Connect the VCS Canvas to the GUI
-            if (self.canvas_gui is not None) and (sal == 1):
-               #####################################################################################################
-               # Charles and Dean - This command will only allow one plot on a page for the VCS Canvas GUI.        #
-               # It is committed out so that there can be two or more plots on a page. Must keep a watch to see    #
-               # what other problems occur without this command. See vcsmodule.c: PyVCS_connect_gui_and_canvas.    #
-               #                                                                                                   #
-               # self._connect_gui_and_canvas( self.winfo_id )                                                     #
-               #####################################################################################################
-               self.canvas_gui.dialog.dialog.configure( title = ("%i. Visualization and Control System (VCS)" % self.canvasid()))
+    #    try:
+    #        if (self.canvas_gui.top_parent.menu.vcs_canvas_gui_settings_flg == 1): # Must be from VCDAT
+    #           self.canvas_gui.dialog.dialog.configure( title = ("Visualization and Control System (VCS) GUI"))
+    #    except: 
+    #        # Connect the VCS Canvas to the GUI
+    #        if (self.canvas_gui is not None) and (sal == 1):
+    #           #####################################################################################################
+    #           # Charles and Dean - This command will only allow one plot on a page for the VCS Canvas GUI.        #
+    #           # It is committed out so that there can be two or more plots on a page. Must keep a watch to see    #
+    #           # what other problems occur without this command. See vcsmodule.c: PyVCS_connect_gui_and_canvas.    #
+    #           #                                                                                                   #
+    #           # self._connect_gui_and_canvas( self.winfo_id )                                                     #
+    #           #####################################################################################################
+    #           self.canvas_gui.dialog.dialog.configure( title = ("%i. Visualization and Control System (VCS)" % self.canvasid()))
 
         # Plot the data
         a = self.__plot( arglist, keyargs )
 
         # Continuation to remove arglist from duplicating its contents
-        if (sal == 0): arglist = []
+        #if (sal == 0): arglist = []
 
-        for x in arglist: self.varglist.append( x ) # save the plot argument list
-        self.canvas.UNBLOCK_X_SERVER()
+        #for x in arglist: self.varglist.append( x ) # save the plot argument list
 
-        if self.canvas_gui is not None:
-            self.canvas_gui.dialog.dialog.deiconify()
+#        if self.canvas_gui is not None:
+#            self.canvas_gui.dialog.dialog.deiconify()
             # This command makes sure that the VCS Canvas Gui is in front of the VCDAT window.
 #            self.canvas_gui.dialog.dialog.transient( self.canvas_gui.top_parent )
-            self.canvas_gui.show_data_plot_info( self.canvas_gui.parent, self )
+#            self.canvas_gui.show_data_plot_info( self.canvas_gui.parent, self )
         return a
     plot.__doc__ = plot.__doc__ % (plot_2_1D_options, plot_keywords_doc,graphics_method_core,axesconvert,plot_2_1D_input, plot_output)
 
@@ -4636,9 +4635,9 @@ Options:::
                 keyargs[k]=xtrakw[k]
         assert arglist[0] is None or cdms2.isVariable (arglist[0])
         assert arglist[1] is None or cdms2.isVariable (arglist[1])
-        assert type(arglist[2]) == types.StringType
-        if not isinstance(arglist[3],vcsaddons.core.VCSaddon): assert type(arglist[3]) == types.StringType
-        assert type(arglist[4]) == types.StringType
+        assert isinstance(arglist[2],str)
+        if not isinstance(arglist[3],vcsaddons.core.VCSaddon): assert isinstance(arglist[3],str)
+        assert isinstance(arglist[4],str)
 
         ##reset animation
         self.animate.create_flg = 0
@@ -5385,7 +5384,8 @@ Options:::
         bg = keyargs.get('bg', 0)
 
         # line added by Charles Doutriaux to plugin the taylordiagram and bypass the C code for graphic methods
-        hold_cont_type = self.canvas.getcontinentstype()
+        warnings.warn("Do something about hold_continent type circa line 5386 in Canvas.py")
+        #hold_cont_type = self.canvas.getcontinentstype()
         if isinstance(arglist[3],str) and arglist[3].lower()=='taylordiagram':
             for p in slab_changed_attributes.keys():
                 if hasattr(arglist[0],p):
@@ -5422,8 +5422,8 @@ Options:::
             raise vcsError, 'Error taylordiagram method: '+arglist[4]+' not found'
         else:
             for keyarg in keyargs.keys():
-                if not keyarg in self.__class__._plot_keywords_:
-                     raise vcsError, 'Invalid keyword: %s'%keyarg
+                if not keyarg in self.__class__._plot_keywords_+self.backend._plot_keywords:
+                     warnings.warn('Unrecognized vcs plot keyword: %s, assuming backend (%s) keyword'%(keyarg,self.backend.type))
 
             if (arglist[0] is not None or keyargs.has_key('variable')):
                 arglist[0] = self._reconstruct_tv(arglist, keyargs)
@@ -5552,7 +5552,7 @@ Options:::
                             lat2=gm.datawc_y2
                         else:
                             lat2=max(arglist[0].getAxis(-2))
-                        copy_tmpl.ratio_linear_projection(lon1,lon2,lat1,lat2,None,box_and_ticks=box_and_ticks)
+                        copy_tmpl.ratio_linear_projection(lon1,lon2,lat1,lat2,None,box_and_ticks=box_and_ticks,x=self)
                         arglist[2]=copy_tmpl.name
             elif not (doratio in ['0','off','none','auto','autot']) or  (arglist[3] in ['boxfill','isofill','isoline','outfill','outline','vector','meshfill'] and str(doratio).lower() in ['auto','autot']) and arglist[2]!='ASD' :
                 box_and_ticks=0
@@ -5567,31 +5567,46 @@ Options:::
                 if copy_tmpl is None:
                     copy_tmpl=self._create_random_template(arglist[2])
                     arglist[2]=copy_tmpl.name
-                copy_tmpl.ratio(Ratio,box_and_ticks=box_and_ticks)
+                copy_tmpl.ratio(Ratio,box_and_ticks=box_and_ticks,x=self)
                             
                             
             if hasattr(self,'_isplottinggridded') : del(self._isplottinggridded)
             # Get the continents for animation generation
-            self.animate.continents_value = self.canvas.getcontinentstype()
+            warnings.warn("aninamte setcontinettype disabled")
+            #self.animate.continents_value = self.canvas.getcontinentstype()
 
             # Get the option for doing graphics in the background.
             if bg:
-                arglist.append('bg')
+                arglist.append(True)
             else:
-                arglist.append('fg')
+                arglist.append(False)
             if arglist[3]=='scatter':
                 if not (numpy.equal(arglist[0].getAxis(-1)[:],arglist[1].getAxis(-1)[:]).all()):
                     raise vcsError, 'Error - ScatterPlot requires X and Y defined in the same place'
             if arglist[3]=='vector':
                 if not (numpy.equal(arglist[0].getAxis(-1)[:],arglist[1].getAxis(-1)[:]).all()) or not(numpy.equal(arglist[0].getAxis(-2)[:],arglist[1].getAxis(-2)[:]).all()):
                     raise vcsError, 'Error - VECTOR components must be on the same grid.'
+            if keyargs.has_key("bg"):
+              del(keyargs["bg"])
             if isinstance(arglist[3],vcsaddons.core.VCSaddon):
                 if arglist[1] is None:
-                    dn = arglist[3].plot(arglist[0],template=arglist[2],bg=bg,x=self)
+                    dn = arglist[3].plot(arglist[0],template=arglist[2],bg=bg,x=self,**keyargs)
                 else:
-                    dn = arglist[3].plot(arglist[0],arglist[1],template=arglist[2],bg=bg,x=self)
+                    dn = arglist[3].plot(arglist[0],arglist[1],template=arglist[2],bg=bg,x=self,**keyargs)
             else:
-                dn = apply(self.canvas.plot, tuple(arglist))
+                self.backend.plot(*arglist,**keyargs)
+                if not keyargs.get("donotstoredisplay",False):
+                  nm,src = self.check_name_source(None,"default","display")
+                  dn = displayplot.Dp(nm)
+                  dn.template = arglist[2]
+                  dn.g_type = arglist[3]
+                  dn.g_name = arglist[4]
+                  dn.array = arglist[:2]
+                else:
+                  dn = None
+        
+            if dn is not None:
+              dn._template_origin = template_origin
             if self.mode!=0 : self.update()
             #if not bg: pause(self.pause_time)
 
@@ -5600,22 +5615,23 @@ Options:::
 ##             self.plot_filledcontinents(arglist[0],arglist[2],arglist[3],arglist[4],bg,doratio)
 
 
+        result = dn
         if isinstance(arglist[3],str):
-            result = self.getplot(dn, template_origin)
+            warnings.warn("please restore getplot functionality in Canvas.py circa 5640")
+#            result = self.getplot(dn, template_origin)
             #self.canvas.setcontinentstype(hold_cont_type)
             # Pointer to the plotted slab of data and the VCS Canas display infomation. 
             # This is needed to find the animation min and max values and the number of 
             # displays on the VCS Canvas.
-            self.animate_info.append( (result, arglist[:2]) )
-            self.animate.update_animate_display_list( )
-        else:
-            result = dn
+            if dn is not None:
+              self.animate_info.append( (result, arglist[:2]) )
+#            self.animate.update_animate_display_list( )
             
 
         # Make sure xmainloop is started. This is needed to check for X events
         # (such as, Canvas Exposer, button or key press and release, etc.)
-        if ( (self.canvas.THREADED() == 0) and (bg == 0) ):
-            thread.start_new_thread( self.canvas.startxmainloop, ( ) )
+        #if ( (self.canvas.THREADED() == 0) and (bg == 0) ):
+        #    thread.start_new_thread( self.canvas.startxmainloop, ( ) )
 
         # Now executes output commands
         for cc in cmds.keys():
@@ -5644,6 +5660,8 @@ Options:::
                 delattr(arglist[0],p)
             else:
                 setattr(arglist[0],p,tmp)
+        if dn is not None:
+          self.display_names.append(result.name)
         return result
 
     #############################################################################
@@ -5660,7 +5678,7 @@ Options:::
     #                                                                           #
     #############################################################################
     def return_display_names(self, *args):
-        return apply(self.canvas.return_display_names, args)
+        return self.display_names
 
     #############################################################################
     #                                                                           #
@@ -5700,7 +5718,9 @@ Options:::
     a.cgm('example',mode='r')  # 'r' will instruct cgm to overwrite an existing file
 
 """
-        return apply(self.canvas.cgm, (file,mode))
+        if mode!='r':
+          warnings.warn("cgm only supports 'r' mode ignoring your mode ('%s')" % mode)
+        return self.backend.cgm(file)
 
     #############################################################################
     #                                                                           #
@@ -5724,8 +5744,11 @@ Options:::
         self.animate.close()
         self.animate_info=[]
         self.animate.update_animate_display_list( )
-
-        return apply(self.canvas.clear, args)
+        self.backend.clear(*args,**kargs)
+        for nm in self.display_names:
+          del(vcs.elements["display"][nm])
+        self.display_names=[]
+        return 
 
     #############################################################################
     #                                                                           #
@@ -5746,22 +5769,22 @@ Options:::
     a.close()
 
 """
-        global gui_canvas_closed
+        #global gui_canvas_closed
 
-        finish_queued_X_server_requests( self )
-        self.canvas.BLOCK_X_SERVER()
+        #finish_queued_X_server_requests( self )
+        #self.canvas.BLOCK_X_SERVER()
 
         #   Hide the GUI
-        if (self.canvas_gui is not None):
-           self.canvas_gui.dialog.dialog.withdraw() # just withdraw the GUI for later
-           gui_canvas_closed = 0
+        #if (self.canvas_gui is not None):
+        #   self.canvas_gui.dialog.dialog.withdraw() # just withdraw the GUI for later
+        #   gui_canvas_closed = 0
 
         # Close the VCS Canvas
-        a = apply( self.canvas.close, args )
+        a = self.backend.close(*args,**kargs)
 
         # Stop the (thread) execution of the X main loop (if it is running).
-        self.canvas.stopxmainloop( )
-        self.canvas.UNBLOCK_X_SERVER()
+        #self.canvas.stopxmainloop( )
+        #self.canvas.UNBLOCK_X_SERVER()
 
         return a
 
@@ -5824,7 +5847,6 @@ Options:::
     a.colormapgui(max_intensity = 255)
 '''
         
-        import warnings
         warnings.warn("The colormap gui has been removed from CDAT, you can access it via the UV-CDAT GUI.", Warning)
         return
 ##         _colormapgui.create(self, gui_parent=gui_parent, transient=transient, max_intensity=max_intensity)
@@ -5848,7 +5870,6 @@ Options:::
     a=vcs.init()
     a.projectiongui()
 '''
-        import warnings
         warnings.warn("The projection gui has been removed from CDAT, you can access it via the UV-CDAT GUI.", Warning)
         return
         ## _projectiongui.create(gui_parent=gui_parent,canvas=self,projection=projection)
@@ -5901,7 +5922,6 @@ Options:::
     a=vcs.init()
     a.graphicsmethodgui('boxfill', 'quick')
 '''
-        import warnings
         warnings.warn("The graphics method gui has been removed from CDAT, you can access it via the UV-CDAT GUI.", Warning)
         return
     ## _graphicsmethodgui.create( self, gm_type=gm_type, gm_name=gm_name,
@@ -6147,7 +6167,7 @@ Options:::
     # VCS Canvas Information wrapper.                                           #
     #                                                                           #
     #############################################################################
-    def canvasinfo(self, *args):
+    def canvasinfo(self, *args,**kargs):
         """
  Function: canvasinfo
 
@@ -6160,7 +6180,7 @@ Options:::
     a.canvasinfo()
 
 """
-        return apply(self.canvas.canvasinfo, args)
+        return self.backend.canvasinfo(*args,**kargs)
 
     #############################################################################
     #                                                                           #
@@ -6413,12 +6433,12 @@ Options:::
     a=vcs.init()
     a.listelements()
 """
-        if args != () and string.lower( args[0] ) =='taylordiagram':
+        if args != () and args[0].lower() =='taylordiagram':
             L = []
             for t in vcs.taylordiagrams:
                 L.append(t.name)
         else:
-            L = apply(self.canvas.listelements, args)
+            L = apply(vcs.listelements, args)
 
         L.sort()
 
@@ -6448,7 +6468,7 @@ Options:::
     # Open VCS Canvas wrapper for VCS.                                          #
     #                                                                           #
     #############################################################################
-    def open(self, *args):
+    def open(self, *args, **kargs):
         """
  Function: open
 
@@ -6460,12 +6480,13 @@ Options:::
     a=vcs.init()
     a.open()    
 """
-        a = apply(self.canvas.open, args)
+
+        a = self.backend.open(*args,**kargs)
 
         # Make sure xmainloop is started. This is needed to check for X events
         # (such as, Canvas Exposer, button or key press and release, etc.)
-        if ( self.canvas.THREADED() == 0 ):
-          thread.start_new_thread( self.canvas.startxmainloop, ( ) )
+        #if ( self.canvas.THREADED() == 0 ):
+        #  thread.start_new_thread( self.canvas.startxmainloop, ( ) )
 
         return a
 
@@ -6487,7 +6508,7 @@ Options:::
     a.open()
     id = a.canvasid()
 '''
-        return apply(self.canvas.canvasid, args)
+        return self._canvas_id
 
     #############################################################################
     #                                                                           #
@@ -6623,7 +6644,7 @@ Options:::
         if rate is not None:
             cmd+=' -r %s ' % rate
         if isinstance(files,(list,tuple)):
-            rnd = "%s/.uvcdat/__uvcdat_%i" % (os.environ["HOME"],numpy.random.randint(60000))
+            rnd = "%s/.uvcdat/__uvcdat_%i" % (os.environ["HOME"],numpy.random.randint(600000000))
             Files = []
             for i,f in enumerate(files):
                 fnm = "%s_%i.png" % (rnd,i)
@@ -6682,8 +6703,14 @@ Options:::
             tmp = W
             W= H
             H = tmp
-            
-        return apply(self.canvas.setbgoutputdimensions,(W,H))
+        #in pixels?
+        self.bgX = W
+        self.bgY = H
+        return 
+    # display ping
+    def put_png_on_canvas(self,filename,zoom=1,xOffset=0,yOffset=0,*args,**kargs):
+      self.backend.put_png_on_canvas(filename,zoom,xOffset,yOffset,*args,**kargs)
+
     ##########################################################################
     #                                                                        #
     # png wrapper for VCS.                                                   #
@@ -6701,18 +6728,8 @@ Options:::
     a.plot(array)
     a.png('example')       # Overwrite a png file
 """
-        if units is not None or width is not None or height is not None:
-            if self.iscanvasdisplayed():
-                warnings.warn("Dimensions cannot be set once canvas is opened, window dims will be used, use bg=1 when plotting to control output dimesnsions")
-            else:
-                warnings.warn("Dimensions must be set apriori (before plotting in bg mode) via setbgoutputdimensions function")
-        if self.iscanvasdisplayed():
-            info=self.canvasinfo()
-            self.setbgoutputdimensions(info["width"],info["height"],"pixels")
-            
-        if not file.split('.')[-1].lower() in ['png']:
-            file+='.png'
-        return apply(self.canvas.png,(file,draw_white_background))
+        return self.backend.png(file,width,height,units,draw_white_background)
+
     #############################################################################
     #                                                                           #
     # pdf wrapper for VCS.                                               #
@@ -7015,7 +7032,7 @@ Options:::
         if mode=='r':
             return apply(self.canvas.postscript,(file,W,H,R,L,T,B))
         else:
-            n=random.randint(0,100000)
+            n=random.randint(0,10000000000000)
             psnm='/tmp/'+'__VCS__tmp__'+str(n)+'.ps'
             apply(self.canvas.postscript,(psnm,W,H,R,L,T,B))
             if os.path.exists(file):
@@ -7095,7 +7112,7 @@ Options:::
     a.pdf(file='example',options='-dCompressPages=false')  # Creates a pdf file w/o compressing page, can be any option understood by ps2pdf
 """ % (self._dotdir)
 
-        n=random.randint(0,100000)
+        n=random.randint(0,100000000000)
         if file[-3:].lower()!='pdf':
             file+='.pdf'
         psnm='/tmp/'+'__VCS__tmp__'+str(n)+'.ps'
@@ -7302,67 +7319,64 @@ Options:::
  Example of Use:
     x._scriptrun('script_filename.scr')
 """
-        # First reads the C stuff
-        apply(self.canvas.scriptrun, args)
         # Now does the python Graphic methods
         f=open(args[0],'r')
-        ln=f.readlines()
-        f.close()
         # browse through the file to look for taylordiagram/python graphics methods
-        ifound=0 # found a taylor graphic method
-        for l in ln:
-            if ifound==0 : s=''
-            if l[:4]=='Gtd_':
-                ifound=1
-##             if l[:4]=='Gmf_':
-##                 ifound=2
-            if ifound == 1:
-                i=string.find(l,')')
-                if i==-1:  # not found the end,i.e ')'
-                    s=s+l[:-1] # we dont want the trail carriage return
-                else:
-                    ifound=0
-                    s=s+l[:i+1]
-                    # Now break the string
-                    # now gets the name and prepare the graphics method
-                    sp=string.split(s,'(')
-                    name=string.join(string.split(sp[0],'_')[1:],'_')
-                    if name!='default' : # we cannot change default
-                        try:
-                            td=self.createtaylordiagram(name)
-                        except Exception,err:
-                            td=self.gettaylordiagram(name)
-                        sp=string.split(sp[1],';') # breaks the thing into different attributes
-                        imark=0
-                        for a in sp : # the last one is ')'
-                            sp2=string.split(a,'=')
-                            if string.strip(sp2[0])=='Marker' : imark=1
-                            if len(sp2)==2:
-                                if imark:
-                                    setattr(td.Marker,string.strip(sp2[0]),eval(sp2[1]))
-                                else:
-                                    setattr(td,string.strip(sp2[0]),eval(sp2[1]))
-##             elif ifound == 2:
-##                 i=string.find(l,')')
-##                 if i==-1:  # not found the end,i.e ')'
-##                     s=s+l[:-1] # we dont want the trail carriage return
-##                 else:
-##                     ifound=0
-##                     s=s+l[:i+1]
-##                     # Now break the string
-##                     # now gets the name and prepare the graphics method
-##                     sp=string.split(s,'(')
-##                     name=string.join(string.split(sp[0],'_')[1:],'_')
-##                     if name!='default' : # we cannot change default
-##                         try:
-##                             mesh=self.createmeshfill(name)
-##                         except:
-##                             mesh=self.getmeshfill(name)
-##                         sp=string.split(sp[1],';') # breaks the thing into different attributes
-##                         for a in sp : # the last one is ')'
-##                             sp2=string.split(a,'=')
-##                             if len(sp2)==2:
-##                                 setattr(mesh,string.strip(sp2[0]),eval(sp2[1]))
+        processing=False # found a taylor graphic method
+        for l in f.xreadlines():
+          if l[:6]=="color(":
+            self.setcolormap(l.strip()[6:-1])
+          elif l[:2] in ["P_","L_","C_"] or l[:3] in ["Tm_","Gv_","Gi_","Tl_","To_","Tt_","Tf_",] or l[:4] in ['GXy_','GYx_','GXY_','GSp_','Gtd_','Gfb_',"Gfm_","Gfi_"] or l[:5] in ["Proj_",] :
+            #We found a graphic method
+            processing = True
+            opened = 0
+            closed = 0
+            s=""
+          if processing:
+            s+=l.strip()
+            opened+=l.count("(")
+            closed+=l.count(")")
+            if closed == opened:
+              # ok we read the whole Graphic method
+              vcs.process_src_element(s)
+              processing = False
+        f.close()
+        ## Ok now we need to double check the isolines
+        gd = vcs.elements["isoline"]["default"]
+        for g in vcs.elements["isoline"].values():
+          if g.name == "default":
+            continue
+          for att in ["line","textcolors","text"]:
+            try:
+              setattr(g,att,getattr(g,att))
+            except Exception,err:
+              lst = []
+              if att == "line":
+                for e in g.line:
+                  if e in vcs.elements["line"]:
+                    lst.append(vcs.elements["line"][e])
+                  else:
+                    lst.append(e)
+              elif att == "text":
+                for e in g.line:
+                  if e in vcs.elements["textorientation"]:
+                    lst.append(vcs.elements["line"][e])
+                  elif e in vcs.elements["text"]:
+                    lst.append(vcs.elements["line"][e])
+                  else:
+                    lst.append(e)
+              elif att == "textcolors":
+                for e in g.line:
+                  if e in vcs.elements["texttable"]:
+                    lst.append(vcs.elements["line"][e])
+                  elif e in vcs.elements["text"]:
+                    lst.append(vcs.elements["line"][e])
+                  else:
+                    lst.append(e)
+              try:
+                setattr(g,att,lst)
+              except Exception,err:
+                setattr(g,att,getattr(gd,att))
                                 
     #############################################################################
     #                                                                           #
@@ -7395,18 +7409,18 @@ Options:::
            # Loop through all lines and determine when a VCS command line
            # begins and ends. That is, get only one VCS command at a time
            scr_str = l[i]
-           lt_paren_ct = string.count(l[i], '(')
-           rt_paren_ct = string.count(l[i], ')')
+           lt_paren_ct = l[i].count('(')
+           rt_paren_ct = l[i].count(')')
            while lt_paren_ct > rt_paren_ct:
               i += 1
               scr_str += l[i]
-              lt_paren_ct += string.count(l[i], '(')
-              rt_paren_ct += string.count(l[i], ')')
+              lt_paren_ct += l[i].count('(')
+              rt_paren_ct += l[i].count(')')
            i += 1
-           scr_str = string.strip( scr_str )
+           scr_str = scr_str.strip()
         
            # Get the VCS command
-           vcs_cmd = string.split(string.split(scr_str, '(')[0], '_')[0]
+           vcs_cmd = scr_str.split('(')[0].split('_')[0]
         
            function = source = name = units = title = lon_name = lat_name = ''
            comment1 = comment2 = comment3 = comment4 = ''
@@ -7414,35 +7428,35 @@ Options:::
               # Get the data via CDMS. That is, retrieve that data as a
               # _TransientVariable. But first, get the source, name, title,
               # etc. of the file.
-              slab_name = string.split(scr_str, '(')[0][2:]
-              a=string.split(scr_str,'",')
+              slab_name = scr_str.split('(')[0][2:]
+              a=scr_str.split('",')
               for j in range(len(a)):
                  b=string.split(a[j],'="')
-                 if string.lower(b[0][-4:]) == 'file':
+                 if b[0][-4:].lower() == 'file':
                     fcdms=cdms2.open(b[1])                       # Open CDMS file
-                 elif string.lower(b[0][-8:]) == 'function':
+                 elif b[0][-8:].lower() == 'function':
                     function =b[1]                              # Get function
-                 elif string.lower(b[0]) == 'source':
+                 elif b[0].lower() == 'source':
                     source = b[1]
-                 elif ( (string.lower(b[0][-4:]) == 'name') and
-                        (string.lower(b[0][-5:]) != 'xname') and
-                        (string.lower(b[0][-5:]) != 'yname') ):
-                    name = string.split( b[1], '")')[0]
-                 elif string.lower(b[0]) == 'units':
-                    units = string.split( b[1], '")')[0]
-                 elif string.lower(b[0][-5:]) == 'title':
-                    title = string.split( b[1], '")')[0]
-                 elif string.lower(b[0][-5:]) == 'xname':
-                    lon_name = string.strip(string.split( b[1], '")')[0])
-                 elif string.lower(b[0][-5:]) == 'yname':
-                    lat_name = string.strip(string.split( b[1], '")')[0])
-                 elif string.lower(b[0][-9:]) == 'comment#1':
+                 elif ( (b[0][-4:].lower() == 'name') and
+                        (b[0][-5:].lower() != 'xname') and
+                        (b[0][-5:].lower() != 'yname') ):
+                    name = b[1].split('")')[0]
+                 elif b[0].lower() == 'units':
+                    units = b[1].split('")')[0]
+                 elif b[0][-5:].lower() == 'title':
+                    title = b[1].split('")')[0]
+                 elif b[0][-5:].lower() == 'xname':
+                    lon_name = b[1].split('")')[0].strip()
+                 elif b[0][-5:].lower() == 'yname':
+                    lat_name = b[1].split('")')[0].strip()
+                 elif b[0][-9:].lower() == 'comment#1':
                     comment1 = b[1]
-                 elif string.lower(b[0][-9:]) == 'comment#2':
+                 elif b[0][-9:].lower() == 'comment#2':
                     comment2 = b[1]
-                 elif string.lower(b[0][-9:]) == 'comment#3':
+                 elif b[0][-9:].lower() == 'comment#3':
                     comment3 = b[1]
-                 elif string.lower(b[0][-9:]) == 'comment#4':
+                 elif b[0][-9:].lower() == 'comment#4':
                     comment4 = b[1]
 ## Comented out by C. Doutriaux, shouldn't print anything
 ##               print 'function = ', function
@@ -7458,9 +7472,9 @@ Options:::
 ##               print 'comment4 = ', comment4
 
               if function != '':
-                 b=string.split(function, '(')
+                 b=function.split('(')
                  ftype=b[0]
-                 V=string.split(b[1],',')[0]
+                 V=b[1].split(',')[0]
 ## Comented out by C. Doutriaux, shouldn't print anything
 ##                  print 'ftype = ', ftype
 ##                  print 'V = ', V
@@ -7472,21 +7486,21 @@ Options:::
                  continue
 
 
-              a=string.split(scr_str,',')
+              a=scr_str.split(',')
               
               # Now get the coordinate values
               x1 = x2 = y1 = y2 = None
               for j in range(len(a)):
-                 c=string.split(a[j], ',')[0]
-                 b=string.split(c, '=')
-                 if string.lower(b[0]) == 'xfirst':
-                    x1 = string.atof( string.split(b[1], ')')[0] )
-                 elif string.lower(b[0]) == 'xlast':
-                    x2 = string.atof( string.split(b[1], ')')[0] )
-                 elif string.lower(b[0][-6:]) == 'yfirst':
-                    y1 = string.atof( string.split(b[1], ')')[0] )
-                 elif string.lower(b[0]) == 'ylast':
-                    y2 = string.atof( string.split(b[1], ')')[0] )
+                 c=a[j].split(',')[0]
+                 b=c.split('=')
+                 if b[0].lower() == 'xfirst':
+                    x1 = float( b[1].split(')')[0] )
+                 elif b[0].lower() == 'xlast':
+                    x2 = float( b[1].split(')')[0] )
+                 elif b[0][-6:].lower() == 'yfirst':
+                    y1 = float( b[1].split(')')[0] )
+                 elif b[0].lower() == 'ylast':
+                    y2 = float( b[1].split(')')[0] )
 
               # Get the variable from the CDMS opened file
               V=fcdms.variables[name]
@@ -7494,7 +7508,7 @@ Options:::
               # Check for the order of the variable and re-order dimensions
               # if necessary
               Order = '(%s)(%s)' % (lat_name,lon_name)
-              Order = string.strip( string.replace( Order, '()', '' ) )
+              Order = Order.strip().replace('()', '' )
               if Order == '': Order = None
               axis_ids = V.getAxisIds()
               re_order_dimension = 'no'
@@ -7506,7 +7520,7 @@ Options:::
 
               # Must have the remaining dimension names in the Order list
               if Order is not None:
-                 O_ct = string.count(Order,'(')
+                 O_ct = Order.count('(')
                  V_ct = len( V.getAxisIds() )
                  for j in range(O_ct, V_ct):
                     Order = ('(%s)' % axis_ids[V_ct-j-1]) + Order
@@ -7545,24 +7559,24 @@ Options:::
               fcdms.close()                                     # Close CDMS file
            elif vcs_cmd == 'D':
               # plot the data with the appropriate graphics method and template
-              a=string.split(scr_str,',')
+              a=scr_str.split(',')
               a_name = b_name = None
               for j in range(len(a)):
-                 b=string.split(a[j],'=')
-                 if string.lower(b[0][-3:]) == 'off':
-                    off = string.atoi( b[1] )
-                 elif string.lower(b[0]) == 'priority':
-                    priority = string.atoi( b[1] )
-                 elif string.lower(b[0]) == 'type':
+                 b=a[j].split('=')
+                 if b[0][-3:].lower() == 'off':
+                    off = int( b[1] )
+                 elif b[0].lower() == 'priority':
+                    priority = int( b[1] )
+                 elif b[0].lower() == 'type':
                     graphics_type = b[1]
-                 elif string.lower(b[0]) == 'template':
+                 elif b[0].lower() == 'template':
                     template = b[1]
-                 elif string.lower(b[0]) == 'graph':
+                 elif b[0].lower() == 'graph':
                     graphics_name = b[1]
-                 elif string.lower(b[0]) == 'a':
-                    a_name = string.split(b[1],')')[0]
-                 elif string.lower(b[0]) == 'b':
-                    b_name = string.split(b[1],')')[0]
+                 elif b[0].lower() == 'a':
+                    a_name = b[1].split(')')[0]
+                 elif b[0].lower() == 'b':
+                    b_name = b[1].split(')')[0]
 
               arglist=[]
             
@@ -7578,29 +7592,14 @@ Options:::
               arglist.append(graphics_type)
               arglist.append(graphics_name)
 
-              # flush and block the X main loop
-              finish_queued_X_server_requests( self )
-              self.canvas.BLOCK_X_SERVER()
-
               if (a_name is not None) and (graphics_type != 'continents'):
                  dn = self.__plot(arglist, {'bg':0})
 
-              # Unblock the (thread) execution of the X main loop (if it is running).
-              self.canvas.UNBLOCK_X_SERVER()
-
-           elif string.lower( vcs_cmd ) == 'canvas':
-              apply(self.canvas.open, args)
-              if ( self.canvas.THREADED() == 0 ):
-                 thread.start_new_thread( self.canvas.startxmainloop, ( ) )
-           elif string.lower( vcs_cmd ) == 'page':
-              orientation = string.lower( string.split(scr_str,'(')[1][:-1] )
-              finish_queued_X_server_requests( self )
-              self.canvas.BLOCK_X_SERVER()
-              if orientation == 'portrait':
-                 apply(self.canvas.portrait, args)
-              else:
-                 apply(self.canvas.landscape, args)
-              self.canvas.UNBLOCK_X_SERVER()
+           elif vcs_cmd.lower() == 'canvas':
+             warnings.warn("Please implement vcs 'canvas' function")
+           elif vcs_cmd.lower() == 'page':
+              orientation = scr_str.split('(')[1][:-1].lower()
+              warnings.warn("Please implement vcs 'page' function")
            else: # Send command to VCS interpreter
               if (len(scr_str) > 1) and (scr_str[0] != '#'):
                  # Save command to a temporary file first, then read script command
@@ -7654,7 +7653,7 @@ Options:::
     # Set VCS color map wrapper for VCS.                                        #
     #                                                                           #
     #############################################################################
-    def setcolormap(self, *args):
+    def setcolormap(self, name):
         """
  Function: setcolormap
 
@@ -7673,15 +7672,13 @@ Options:::
         # Don't update the VCS segment if there is no Canvas. This condition
         # happens in the initalize function for VCDAT only. This will cause a
         # core dump is not checked.
-        try:
-           updateVCSsegments_flag = args[1]
-        except:
-           updateVCSsegments_flag = 1
-        a=apply(self.canvas.setcolormap, args)
-        if updateVCSsegments_flag == 1:
-           self.canvas.updateVCSsegments(self.mode) # pass down self and mode to _vcs module
-        self.flush() # update the canvas by processing all the X events
-        return a
+        #try:
+        #   updateVCSsegments_flag = args[1]
+        #except:
+        #   updateVCSsegments_flag = 1
+        self.colormap = name
+        warnings.warn("need to implemeent code to redraw vcs after colormap change")
+        return
 
     #############################################################################
     #                                                                           #
@@ -7726,8 +7723,8 @@ Options:::
     # Set continents type wrapper for VCS.                           		#
     #                                                                           #
     #############################################################################
-    def setcontinentstype(self, *args):
-        """
+    def setcontinentstype(self, value):
+      """
  Function: setcontinentstype
 
  Description of Function:
@@ -7747,12 +7744,33 @@ Options:::
     Values 6 through 11 signify the line type defined by the files
     data_continent_other7 through data_continent_other12. 
 
+    You can also pass a file
+
  Example of Use:
     a=vcs.init()
     a.setcontinentstype(3)
+    #a.setcontinentstype(os.environ["HOME"]+"/.uvcdat/data_continents_states")
     a.plot(array,'default','isofill','quick')
 """
-        return apply(self.canvas.setcontinentstype, args)
+      nms = ["fine","coarse","states","political","river","other6","other7","other8","other9","other10","other11","other12"]
+      if isinstance(value,int):
+        if value == 0:
+          self._continents = None
+        elif 0<value<12:
+          self._continents = os.path.join(os.environ.get("HOME",""),os.environ.get(vcs.getdotdirectory()[1],vcs.getdotdirectory()[0]),"data_continent_%s" % nms[value-1])
+          if not os.path.exists(self._continents):
+            #fallback on installed with system one
+            self._continents = os.path.join(sys.prefix,"share","vcs","data_continent_%s" % nms[value-1])
+        else:
+          raise Exception("Error continents value must be file or int < 12")
+      elif isinstance(value,str):
+        self._continents = value
+      if not os.path.exists(self._continents):
+        warnings.warn("Continents file not found: %s, substituing with coarse continents" % self._continents)
+        self._continents = os.path.join(os.environ.get("HOME",""),os.environ.get(vcs.getdotdirectory()[1],vcs.getdotdirectory()[0]),"data_continent_coarse")
+        if not  os.path.exists(self._continent):
+          self._continents = os.path.join(sys.prefix,"share","vcs","data_continent_coarse")
+        return
 
     #############################################################################
     #                                                                           #
@@ -7799,8 +7817,8 @@ Options:::
         if orientation is None:
             orientation=self.orientation()[0]
         g = string.split(geometry,'x')
-        f1 = f1=string.atof(g[0]) / 1100.0 * 100.0
-        f2 = f2=string.atof(g[1]) / 849.85 * 100.0
+        f1 = f1=float(g[0]) / 1100.0 * 100.0
+        f2 = f2=float(g[1]) / 849.85 * 100.0
         geometry = "%4.1fx%4.1f" % (f2,f1)
         nargs = ('gif', filename, merge, orientation, geometry)
         return apply(self.canvas.gif_or_eps, nargs)
@@ -7848,8 +7866,8 @@ Options:::
         if orientation is None:
             orientation=self.orientation()[0]
         r = string.split(resolution,'x')
-        f1 = f1=string.atof(r[0]) / 1100.0 * 100.0
-        f2 = f2=string.atof(r[1]) / 849.85 * 100.0
+        f1 = f1=float(r[0]) / 1100.0 * 100.0
+        f2 = f2=float(r[1]) / 849.85 * 100.0
         resolution = "%4.1fx%4.1f" % (f2,f1)
         nargs = (filename, device, orientation, resolution)
         return apply(self.canvas.gs, nargs)
@@ -7885,7 +7903,7 @@ Options:::
         ext = file.split(".")[-1]
         if ext.lower()!='eps':
             file=file+'.eps'
-        num = numpy.random.randint(10000000)
+        num = numpy.random.randint(100000000000)
         tmpfile = "/tmp/vcs_tmp_eps_file_%i.ps" % num
         if mode=='a' and os.path.exists(file):
             os.rename(file,tmpfile)
@@ -7913,7 +7931,7 @@ Options:::
     a.show('marker')
     a.show('text')
 """
-        if args != () and string.lower(args[0]) == 'taylordiagram':
+        if args != () and args[0].lower() == 'taylordiagram':
             ln=[]
             ln.append('*******************Taylor Diagrams Names List**********************')
             nms=[]
@@ -7950,7 +7968,7 @@ Options:::
             file=os.path.join(os.environ['HOME'],self._dotdir,'initial.attributes') 
         f=open(file,'r')
         for ln in f.xreadlines():
-            if string.find(ln,key)>-1:
+            if ln.find(key)>-1:
                 f.close()
                 return 1
         return 0
@@ -8181,12 +8199,14 @@ Options:::
 
 """
         # Check to make sure the arguments passed in are STRINGS
-        if (type(Cp_name) != StringType):
+        if not isinstance(Cp_name,str):
            raise ValueError, 'Error -  The first argument must be a string.'
-        if (type(Cp_name_src) != StringType):
+        if not isinstance(Cp_name_src,str):
            raise ValueError, 'Error -  The second argument must be a string.'
 
-        return colormap.Cp(self, Cp_name, Cp_name_src, 0)
+        if Cp_name in vcs.elements["colormap"]:
+          raise Exception,"The colrmap '%s' already exists" % Cp_name
+        return colormap.Cp(Cp_name, Cp_name_src)
 
     def getcolormap(self,Cp_name_src='default'):
         """
@@ -8210,11 +8230,10 @@ Options:::
                                             #       secondary method
 """
         # Check to make sure the argument passed in is a STRING
-        if (type(Cp_name_src) != StringType):
+        if not isinstance(Cp_name_src,str):
            raise ValueError, 'Error -  The argument must be a string.'
 
-        Cp_name = None
-        return colormap.Cp(self, Cp_name, Cp_name_src, 1)
+        return vcs.elements["colormap"][Cp_name_src]
 
     #############################################################################
     #                                                                           #
@@ -8247,7 +8266,9 @@ Options:::
         nms = []
         for f in files:
             fnm,name = f
-            nms.append(apply(self.canvas.addfont,(fnm,name)))
+            i = max(vcs.elements["fontNumber"].keys())+1
+            vcs.elements["font"][name]=fnm
+            vcs.elements["fontNumber"][i]=name
         if len(nms)==0:
             raise vcsError,'No font Loaded'
         elif len(nms)>1:
@@ -8260,19 +8281,13 @@ Options:::
         """
         get the font number associated with a font name
         """
-        nb = apply(self.canvas.getfontnumber,(name,))
-        if nb==-1:
-            raise vcsError,"Font name not existing! %s" % name
-        return nb
+        return vcs.getfontnumber(name)
     
     def getfontname(self, number):
         """
         get the font name associated with a font number
         """
-        nm = apply(self.canvas.getfontname,(number,))
-        if nm=="":
-            raise vcsError,"Error font number not existing %i" % number
-        return nm
+        return vcs.getfontname(number)
     
     def getfont(self, font):
         """
@@ -8333,7 +8348,7 @@ Options:::
     # Orientation VCS Canvas orientation wrapper for VCS.                       #
     #                                                                           #
     #############################################################################
-    def orientation(self, *args):
+    def orientation(self, *args, **kargs):
         """
  Function: orientation
 
@@ -8344,7 +8359,7 @@ Options:::
     a=vcs.init()
     a.orientation()      # Return either "landscape" or "portrait"
 """ 
-        return apply(self.canvas.orientation, args)
+        return self.backend.orientation(*args,**kargs)
 
     #############################################################################
     #                                                                           #
@@ -8399,11 +8414,9 @@ Options:::
     a.plot(array,'default','isofill','quick')
     a.getcolormapname()
 """
-        a=apply(self.canvas.getcolormapname, args)
-        return a
+        return self.colormap
     
     def dummy_user_action(self,*args,**kargs):
-##         print 'In dummy baby!'
         print 'Arguments:',args
         print 'Keywords:',kargs
         return None
@@ -8423,861 +8436,3 @@ def change_date_time(tv, number):
             tv.time = '%s:%s:%s\0'%(cobj.hour, cobj.minute, cobj.second)
         except:
             pass
-
-#############################################################################
-#                                                                           #
-# Animate wrapper for VCS.                                                  #
-#                                                                           #
-#############################################################################
-class animate_obj_old:
-   """
- Function: animate
-
- Description of Function:
-    Animate the contents of the VCS Canvas. The animation can also be controlled from
-    the animation GUI. (See VCDAT for more details.)
- 
-    See the animation GUI documenation located at URL:
-        http://www-pcmdi.llnl.gov/software/vcs
-
- Example of Use:
-    a=vcs.init()
-    a.plot(array,'default','isofill','quick')
-    a.animate()
-
-"""
-    
-   ##############################################################################
-   # Initialize the animation flags						#
-   ##############################################################################
-   def __init__(self, vcs_self):
-      self.vcs_self = vcs_self
-      self.gui_popup = 0
-      self.create_flg = 0
-      self.run_flg = 0
-      self.continents_value = 0
-      self.continents_hold_value = 1
-      
-   ##############################################################################
-   # Create the animation images. If min or max is None, then			#
-   # the animator will find the min and max values from the dataset.		#
-   # If min and max are set to 1e20, then no min and max animation		#
-   # value is used (i.e., each animation frame will have different		#
-   # min and max values. If min and max are set by the user, then		#
-   # these values are used for the animation min and max.			#
-   #										#
-   # If you are running animation from a program, set thread_it to 0.		#
-   # This will cause the Python program to wait for the create function		#
-   # to finish before moving onto the next command line.			#
-   ##############################################################################
-   def create( self, parent=None, min=None, max=None, save_file=None, thread_it = 1, rate=None, bitrate=None, ffmpegoptions='' ):
-      from vcs import minmax
-      from numpy.ma import maximum,minimum
-      ##from tkMessageBox import showerror
-
-      # Cannot "Run" or "Create" an animation while already creating an animation
-      if self.run_flg == 1: return
-      if self.vcs_self.canvas.creating_animation() == 1: return
-
-      if self.vcs_self.animate_info == []:
-         str = "No data found!"
-         showerror( "Error Message to User", str )
-         return
-      finish_queued_X_server_requests( self.vcs_self )
-      self.vcs_self.canvas.BLOCK_X_SERVER()
-
-      # Stop the (thread) execution of the X main loop (if it is running).
-      self.vcs_self.canvas.stopxmainloop( )
-
-      # Force VCS to update its orientation, needed when the user changes the
-      # VCS Canvas size.
-      self.vcs_self.canvas.updateorientation()
-
-      # Make sure the animate information is up-to-date for creating images
-      if ((self.gui_popup == 1) and (self.create_flg == 0)):
-         self.update_animate_display_list( )
-
-      # Save the min and max values for the graphics methods.
-      # Will need to restore values back when animation is done.
-      self.save_original_min_max()
-
-      # Set up the animation min and max values by changing the graphics method
-      # Note: cannot set the min and max values if the default graphics method is set.
-      do_min_max = 'yes'
-      try:
-         if (parent is not None) and (parent.iso_spacing == 'Log'):
-            do_min_max = 'no'
-      except:
-         pass
-
-      # Draw specified continental outlines if needed.
-      self.continents_hold_value = self.vcs_self.canvas.getcontinentstype( )
-      self.vcs_self.canvas.setcontinentstype( self.continents_value )
-
-      if ( do_min_max == 'yes' ):
-         minv = []
-         maxv=[]
-         if (min is None) or (max is None):
-            for i in range(len(self.vcs_self.animate_info)):
-               minv.append( 1.0e77 )
-               maxv.append( -1.0e77 )
-            for i in range(len(self.vcs_self.animate_info)):
-               dpy, slab = self.vcs_self.animate_info[i]
-               mins, maxs = minmax(slab)
-               minv[i] = float(minimum(float(minv[i]), float(mins)))
-               maxv[i] = float(maximum(float(maxv[i]), float(maxs)))
-         if ((type(min) == types.ListType) or (type(max) == types.ListType)):
-            for i in range(len(self.vcs_self.animate_info)):
-               try:
-                  minv.append( min[i] )
-               except:
-                  minv.append( min[-1] )
-               try:
-                  maxv.append( max[i] )
-               except:
-                  maxv.append( max[-1] )
-         else:
-            for i in range(len(self.vcs_self.animate_info)):
-                minv.append( min )
-                maxv.append( max )
-
-         # Set the min an max for each plot in the page. If the same graphics method is used
-         # to display the plots, then the last min and max setting of the data set will be used.
-         for i in range(len(self.vcs_self.animate_info)):
-            try:
-               self.set_animation_min_max( minv[i], maxv[i], i )
-            except Exception,err:
-               pass # if it is default, then you cannot set the min and max, so pass.
-
-      if save_file is None or save_file.split('.')[-1].lower()=='ras':
-          if thread_it == 1:
-              thread.start_new_thread( self.vcs_self.canvas.animate_init, (save_file,) )
-              ## from cdatguiwrap import VCSQtManager
-              ## w = VCSQtManager.window(0)
-              #self.mythread=QAnimThread(None,self.vcs_self.canvas.animate_init,save_file)
-              #self.mythread.start()
-          else:
-              self.vcs_self.canvas.animate_init( save_file )
-      else: # ffmpeg stuff
-          save_info = self.vcs_self.animate_info
-          animation_info = self.animate_info_from_python()
-          slabs=[]
-          templates=[]
-          dpys=[]
-          for i in range(len(self.vcs_self.animate_info)):
-              dpy, slab = self.vcs_self.animate_info[i]
-              slabs.append(slab)
-              dpys.append(dpy)
-              templates.append(dpy.template)
-          sh =slabs[0].shape
-          if dpy.g_type in ['boxfill', 'isofill', 'isoline', 'meshfill', 'outfill', 'outline', 'taylordiagram', 'vector', ]:
-              r=len(sh)-2
-          else:
-              r=len(sh)-1
-          # now create the list of all previous indices to plot
-          indices=[]
-          for i in range(r):
-              this = list(range(sh[i]))
-              tmp=[]
-              if indices == []:
-                  for k in this:
-                      indices.append([k,])
-              else:
-                  for j in range(len(indices)):
-                      for k in this:
-                          tmp2=copy.copy(indices[j])
-                          tmp2.append(k)
-                          tmp.append(tmp2)
-                  indices=tmp
-          count=1
-          white_square=self.vcs_self.createfillarea()
-          white_square.color=240
-          white_square.x=[0,1,1,0]
-          white_square.y=[0,0,1,1]
-          new_vcs=vcs.init()
-          if self.vcs_self.orientation()=='portrait':
-              new_vcs.portrait()
-          #self.vcs_self.close()
-
-          d = Pmw.Dialog(title="Creating Frames")
-          d.geometry("200x150+0+0")
-          S=genutil.Statusbar(d.interior(),ycounter=50)
-          S.pack(expand=1,fill='both')
-          n=float(len(indices))/100.
-          for index in indices:
-              S.show(count/n)
-              new_vcs.clear()
-              new_vcs.plot(white_square,bg=1)
-              for i in range(len(save_info)):
-                  slab=slabs[i]
-                  template=templates[i]
-                  gtype = string.lower(animation_info["gtype"][i])
-                  gname = animation_info["gname"][i]
-                  exec("gm = new_vcs.get%s('%s')" % (gtype,gname))
-                  for j in index:
-                      slab=slab[j]
-                  new_vcs.plot(slab,gm,new_vcs.gettemplate(template),bg=1)
-              new_vcs.png("tmp_anim_%i" % count)
-              count+=1
-          new_vcs.ffmpeg(save_file,"tmp_anim_%d.png",bitrate=bitrate,rate=rate,options=ffmpegoptions)
-          for i in range(count-1):
-              os.remove("tmp_anim_%i.png" % (i+1))
-          d.destroy()
-          del(new_vcs)
-      self.create_flg = 1
-
-      self.vcs_self.canvas.UNBLOCK_X_SERVER()
-
-   def animate_info_from_python(self):
-       gtype = []
-       gname = []
-       tmpl = []
-       for i in self.vcs_self.animate_info:
-            d=i[0]
-            tmpl.append(d.template)
-            gtype.append(d.g_type)
-            gname.append(d.g_name)
-       return {"template":tmpl,"gtype":gtype,"gname":gname}
-
-   ##############################################################################
-   # Save original min and max values    					#
-   ##############################################################################
-   def save_original_min_max( self ):
-      animation_info = self.animate_info_from_python()
-      self.save_min = {}
-      self.save_max = {}
-      self.save_legend = {}
-      self.save_levels = {}
-      self.save_mean_veloc = {}
-      for i in range(len(self.vcs_self.animate_info)):
-         gtype = string.lower(animation_info["gtype"][i])
-         if gtype == "boxfill":
-            gm=self.vcs_self.getboxfill(animation_info['gname'][i])
-            self.save_min[i] = gm.level_1
-            self.save_max[i] = gm.level_2
-#            self.save_legend[i] = gm.legend
-         elif ( gtype == "meshfill" ):
-            gm=self.vcs_self.getmeshfill(animation_info['gname'][i])
-            self.save_levels[i] = gm.levels
-         elif ( gtype == "isofill" ):
-            gm=self.vcs_self.getisofill(animation_info['gname'][i])
-            self.save_levels[i] = gm.levels
-         elif ( gtype == "isoline" ):
-            gm=self.vcs_self.getisoline(animation_info['gname'][i])
-            self.save_levels[i] = gm.levels
-         elif ( gtype == "yxvsx" ):
-            gm=self.vcs_self.getyxvsx(animation_info['gname'][i])
-            self.save_min[i] = gm.datawc_y1
-            self.save_max[i] = gm.datawc_y2
-         elif ( gtype == "xyvsy" ):
-            gm=self.vcs_self.getxyvsy(animation_info['gname'][i])
-            self.save_min[i] = gm.datawc_x1
-            self.save_max[i] = gm.datawc_x2
-         elif ( gtype == "vector" ):
-            gm=self.vcs_self.getvector(animation_info['gname'][i])
-            self.save_mean_veloc[i] = gm.reference
-
-   ##############################################################################
-   # Restore min and max values                                                 #
-   ##############################################################################
-   def restore_min_max( self ):
-      animation_info = self.animate_info_from_python()
-      try:
-       for i in range(len(self.vcs_self.animate_info)):
-         gtype = string.lower(animation_info["gtype"][i])
-         if gtype == "boxfill":
-            gm=self.vcs_self.getboxfill(animation_info['gname'][i])
-            gm.level_1 = self.save_min[i]
-            gm.level_2 = self.save_max[i]
-#            gm.legend = self.save_legend[i]
-         elif ( gtype == "meshfill" ):
-            gm=self.vcs_self.getmeshfill(animation_info['gname'][i])
-            gm.levels = self.save_levels[i]
-         elif ( gtype == "isofill" ):
-            gm=self.vcs_self.getisofill(animation_info['gname'][i])
-            gm.levels = self.save_levels[i]
-         elif ( gtype == "isoline" ):
-            gm=self.vcs_self.getisoline(animation_info['gname'][i])
-            gm.levels = self.save_levels[i]
-         elif ( gtype == "yxvsx" ):
-            gm=self.vcs_self.getyxvsx(animation_info['gname'][i])
-            gm.datawc_y1 = self.save_min[i]
-            gm.datawc_y2 = self.save_max[i]
-         elif ( gtype == "xyvsy" ):
-            gm=self.vcs_self.getxyvsy(animation_info['gname'][i])
-            gm.datawc_x1 = self.save_min[i]
-            gm.datawc_x2 = self.save_max[i]
-         elif ( gtype == "vector" ):
-            gm=self.vcs_self.getvector(animation_info['gname'][i])
-            gm.reference = self.save_mean_veloc[i]
-      except:
-          pass
-   
-   ##############################################################################
-   # Set the animation min and max values    					#
-   ##############################################################################
-   def set_animation_min_max( self, min, max, i ):
-      from vcs import mkscale, mklabels, getcolors
-      animation_info = self.animate_info_from_python()
-      gtype = string.lower(animation_info["gtype"][i])
-      levs = mkscale(min,max)
-      dic = mklabels(levs)
-      cols = getcolors(levs)
-      if gtype == "boxfill":
-         gm=self.vcs_self.getboxfill(animation_info['gname'][i])
-         if gm.boxfill_type == 'custom':
-             gm.fillareacolors = cols
-             gm.levels = levs
-         else:
-             gm.level_1=levs[0]
-             gm.level_2=levs[-1]
-             gm.legend=None
-      elif ( gtype == "meshfill" ):
-         gm=self.vcs_self.getmeshfill(animation_info['gname'][i])
-         if (min == 1e20) and (max ==1e20):
-            gm.levels=(1e20,1e20)
-         else:
-            gm.levels = levs
-            gm.fillareacolors = cols
-      elif ( gtype == "isofill" ):
-         gm=self.vcs_self.getisofill(animation_info['gname'][i])
-         if (min == 1e20) and (max ==1e20):
-            gm.levels=(1e20,1e20)
-         else:
-            gm.levels = levs
-            gm.fillareacolors = cols
-      elif ( gtype == "isoline" ):
-         gm=self.vcs_self.getisoline(animation_info['gname'][i])
-         if (min == 1e20) and (max ==1e20):
-            gm.levels=(1e20,1e20)
-         else:
-            gm.levels = levs
-            gm.fillareacolors = cols
-      elif ( gtype == "yxvsx" ):
-         gm=self.vcs_self.getyxvsx(animation_info['gname'][i])
-         if (min != 1e20) and (max !=1e20):
-            gm.yticlabels1=dic
-            gm.yticlabels2=dic
-            min = levs[0]
-            max = levs[-1]
-         gm.datawc_y1 = min
-         gm.datawc_y2 = max
-      elif ( gtype == "xyvsy" ):
-         gm=self.vcs_self.getxyvsy(animation_info['gname'][i])
-         if (min != 1e20) and (max !=1e20):
-            gm.xticlabels1=dic
-            gm.xticlabels2=dic
-            min = levs[0]
-            max = levs[-1]
-         gm.datawc_x1 = min
-         gm.datawc_x2 = max
-      elif ( gtype == "vector" ):
-         gm=self.vcs_self.getvector(animation_info['gname'][i])
-         mean_veloc = 1e20
-         if (min != 1e20) and (max !=1e20):
-            mean_veloc = float( int( numpy.sqrt( (min**2)+(max**2) ) ) )
-         gm.reference = mean_veloc
-      animation_info['gname'][i] = gm.name
-
-   ##############################################################################
-   # Return the animation min and max values                                    #
-   ##############################################################################
-   def return_animation_min_max( self ):
-      dpy, slab = self.vcs_self.animate_info[0]
-      return vcs.minmax(slab)
-
-   ##############################################################################
-   # Load animation from a stored Raster file.   				#
-   ##############################################################################
-   def load_from_file( self, parent=None, load_file=None, thread_it = 1 ):
-      ##from tkMessageBox import showerror
-      if os.access(load_file, os.R_OK) == 0:
-         showerror( "Error Message to the User", "The specfied file does not have read permission or does not exist. Please check the availability of the file.")
-         return
-
-      finish_queued_X_server_requests( self.vcs_self )
-      self.vcs_self.canvas.BLOCK_X_SERVER()
-
-      # Stop the (thread) execution of the X main loop (if it is running).
-      self.vcs_self.canvas.stopxmainloop( )
-
-      if thread_it == 1:
-          thread.start_new_thread( self.vcs_self.canvas.animate_load, (load_file,) )
-      else:
-          self.vcs_self.canvas.animate_init( load_file )
-      self.create_flg = 1
-
-      self.vcs_self.canvas.UNBLOCK_X_SERVER()
-
-   ##############################################################################
-   # Creating animation flag                 					#
-   ##############################################################################
-   def creating_animation_flg( self ):
-      return self.vcs_self.canvas.creating_animation()
-
-   ##############################################################################
-   # Run animation flag                 					#
-   ##############################################################################
-   def run_animation_flg( self ):
-      return self.run_flg
-
-   ##############################################################################
-   # Run or start the animation              					#
-   ##############################################################################
-   def run( self ):
-      # Cannot "Create" an animation while running an animation.
-      if self.vcs_self.canvas.creating_animation() == 1: return
-
-      if ((self.create_flg == 1) and (self.run_flg == 0)):
-         self.run_flg = 1
-         #thread.start_new_thread( self.vcs_self.canvas.animate_run,( ) )
-         self.vcs_self.canvas.animate_run()
-
-   ##############################################################################
-   # Stop the animation creation                                                #
-   ##############################################################################
-   def stop_create( self ):
-      if (self.create_flg == 1):
-         self.vcs_self.canvas.animate_stop_create()
-
-   ##############################################################################
-   # Stop the animation                                 			#
-   ##############################################################################
-   def stop( self ):
-      if (self.create_flg == 1) and (self.run_flg == 1):
-         self.run_flg = 0
-         self.vcs_self.canvas.animate_stop()
-      elif (self.create_flg == 1):
-         self.vcs_self.canvas.animate_stop_create()
-	
-   ##############################################################################
-   # View the specified animation frame                          		#
-   ##############################################################################
-   def frame( self, value=1 ):
-      if (self.create_flg == 1) and (self.run_flg == 0):
-         self.vcs_self.canvas.animate_frame( value )
-
-   ##############################################################################
-   # Return the number of animate frames                                    	#
-   ##############################################################################
-   def number_of_frames( self ):
-      if self.create_flg == 1:
-         return self.vcs_self.canvas.animate_number_of_frames( )
-
-   ##############################################################################
-   # Pause the animation loop                                               	#
-   # Value ranges from 0 to 100                                                 #
-   ##############################################################################
-   def pause( self, value=1 ):
-      if (((not isinstance(value, types.IntType))) or (value not in range(0, 101))):
-         raise vcsError, "Pause value must be between an integer between 0 and 100."
-
-      if (self.create_flg == 1) and (self.run_flg == 1):
-         self.vcs_self.canvas.animate_pause( value )
-
-   ##############################################################################
-   # Zoom in on the animation                                               	#
-   # Value ranges from 0 to 20                                                  #
-   ##############################################################################
-   def zoom( self, value=1 ):
-      if (((not isinstance(value, types.IntType))) or (value not in range(1, 21))):
-         raise vcsError, "Zoom value must be between an integer between 1 and 20."
-
-      if self.vcs_self.canvas.creating_animation() == 1: return
-
-      if self.create_flg == 1:
-         self.vcs_self.canvas.animate_zoom( value )
-
-   ##############################################################################
-   # Pan the zoomed animation or frame in the x (or horizontal) direction   	#
-   # Value ranges from -100 to 100						#
-   ##############################################################################
-   def horizontal( self, value=0 ):
-      if (((not isinstance(value, types.IntType))) or (value not in range(-100, 101))):
-         raise vcsError, "Horizontal pan value must be between an integer between -100 and 100."
-
-      if self.vcs_self.canvas.creating_animation() == 1: return
-
-      if self.create_flg == 1:
-         self.vcs_self.canvas.animate_horizontal( value )
-
-   ##############################################################################
-   # Pan the zoomed animation or frame in the y (or vertical) direction   	#
-   # Value ranges from -100 to 100						#
-   ##############################################################################
-   def vertical( self, value=0 ):
-      if (((not isinstance(value, types.IntType))) or (value not in range(-100, 101))):
-         raise vcsError, "Vertical pan value must be between an integer between -100 and 100."
-
-      if self.vcs_self.canvas.creating_animation() == 1: return
-
-      if self.create_flg == 1:
-         self.vcs_self.canvas.animate_vertical( value )
-
-   ##############################################################################
-   # Set the direction of the animation:                                        #
-   # Value 1 -> forward, 2 -> backward       	                                #
-   ##############################################################################
-   def direction( self, value=1 ):
-      if (((not isinstance(value, types.IntType))) or (value not in range(1, 3))):
-         raise vcsError, "Direction value must be between either 1='forward' or 2='backward'."
-
-      if self.vcs_self.canvas.creating_animation() == 1: return
-
-      if self.create_flg == 1:
-         self.vcs_self.canvas.animate_direction( value )
-
-   ##############################################################################
-   # Mode sets the cycle, forth and back, or animate once                   	#
-   # Value: 1 -> cycle, 2 -> animate once, and 3 -> forth and back              #
-   ##############################################################################
-   def mode( self, value=1 ):
-      if (((not isinstance(value, types.IntType))) or (value not in [1, 3])):
-         raise vcsError, "Mode value must be between either 1 or 3."
-
-      if value == 2:
-         self.run_flg = 0
-
-      if self.vcs_self.canvas.creating_animation() == 1: return
-
-      if self.create_flg == 1:
-         self.vcs_self.canvas.animate_mode( value )
-
-   ##############################################################################
-   # Update the animation display list                                      	#
-   ##############################################################################
-   def update_animate_display_list( self ):
-        current_display_list = self.vcs_self.return_display_names()
-         
-        temp_list = []
-        for i in range(len(self.vcs_self.animate_info)):
-           if self.vcs_self.animate_info[i][0].name in current_display_list:
-              temp_list.append( (self.vcs_self.animate_info[i][0],
-                                self.vcs_self.animate_info[i][1]) )
-        self.vcs_self.animate_info = temp_list
-
-   ##############################################################################
-   # Close the animate session                                              	#
-   ##############################################################################
-   def close( self ):
-      if self.create_flg == 1:
-         self.vcs_self.canvas.animate_close()
-         self.gui_popup = 0
-         self.create_flg = 0
-         self.run_flg = 0
-         self.vcs_self.canvas.getcontinentstype( self.continents_hold_value )
-         self.continents_value = 0
-         self.continents_hold_value = 1
-      self.vcs_self.animate_info = []
-
-      # Now that the animation is completed, restore the graphics methods min and max values.
-      self.restore_min_max()
-
-   ##############################################################################
-   # Pop up the animation GUI                                              	#
-   ##############################################################################
-   def gui( self, gui_parent=None, transient=0):
-      if self.gui_popup == 0:
-         self.gui_popup = 1
-         a = _animationgui.create(self, gui_parent, transient)
-         return a
-
-class animate_obj(animate_obj_old):
-
-    class AnimationSignals(QtCore.QObject):
-        """Inner class to hold signals since main object is not a QObject
-        """
-        drew = QtCore.pyqtSignal()
-        created = QtCore.pyqtSignal()
-        canceled = QtCore.pyqtSignal()
-        paused = QtCore.pyqtSignal()
-
-    def __init__(self, vcs_self):
-        animate_obj_old.__init__(self,vcs_self)
-        self.zoom_factor = 1.
-        self.vertical_factor = 0
-        self.horizontal_factor = 0
-        self.allArgs = []
-        self.canvas = None
-        self.animation_seed = None
-        self.animation_files = []
-        self.runTimer = QtCore.QTimer() #used to run the animation
-        self.runTimer.timeout.connect(self.next)
-        self.fps(10) #sets runTimer interval
-        self.current_frame = 0
-        self.loop = True
-        self.signals = self.AnimationSignals() #holds signals, since we are not a QObject
-
-    def create( self, parent=None, min=None, max=None, save_file=None, thread_it = 1, rate=5., bitrate=None, ffmpegoptions='', axis=0):
-        self.current_frame = 0
-        if thread_it:
-            class crp(QtCore.QObject): 
-
-                def __init__(self, anim):
-                    QtCore.QObject.__init__(self)
-                    self.animationTimer = QtCore.QBasicTimer()
-                    self.animationFrame = 0
-                    self.anim = anim
-                    self.dialog = QtGui.QProgressDialog("Creating animation...", "Cancel", 0, 0)
-                    self.dialog.setModal(True)
-                    self.dialog.canceled.connect(self.dailogCanceled)
-                    
-                def timerEvent(self, event):
-                    self.dialog.setValue(self.animationFrame)
-                    if self.animationFrame>=len(self.anim.allArgs):
-                        self.animationTimer.stop()
-                        self.anim.animationCreated()
-                        return
-                    self.anim.renderFrame(self.animationFrame)
-                    self.animationFrame += 1
-
-                def dailogCanceled(self):
-                    self.animationTimer.stop()
-                    self.anim.animationCanceled()
-
-            global C
-            C=crp(self)
-            self._actualCreate(parent,min,max,save_file,rate,bitrate,ffmpegoptions,axis,C)
-        else:
-            C=None
-            self._actualCreate(parent,min,max,save_file,rate,bitrate,ffmpegoptions,axis)
-        return C
-
-    def _actualCreate( self, parent=None, min=None, max=None, save_file=None, rate=5., bitrate=None, ffmpegoptions='', axis=0, sender=None):
-        alen = None
-        if self.canvas is None:  
-            self.canvas=vcs.init()
-        self.canvas.clear()
-        dims = self.vcs_self.canvasinfo()
-        if dims['height']<500:
-            factor = 2
-        else:
-            factor=1
-        if dims["width"]<dims["height"]:
-            self.canvas.portrait(width=dims["width"],height=dims["height"])
-        self.canvas.setbgoutputdimensions(width = dims['width']*factor,height=dims['height']*factor,units='pixel')
-        truncated = False
-        for I in self.vcs_self.animate_info:
-            if alen is None:
-                alen = I[1][0].shape[axis]
-            else:
-                l = I[1][0].shape[axis]
-                if l!=alen:
-                    alen = numpy.minimum(alen,l)
-                    truncated = True
-        if truncated:
-            warnings.warn("Because of inconsistent shapes over axis: %i, the animation length will be truncated to: %i\n" % (axis,alen))
-        if self.animation_seed is not None:
-            if self.animation_files != []:
-                for fnm in self.animation_files:
-                    os.remove(fnm)
-        self.animation_seed = None
-        self.animation_files = []
-        # Save the min and max values for the graphics methods.
-        # Will need to restore values back when animation is done.
-        self.save_original_min_max()
-        # Note: cannot set the min and max values if the default graphics method is set.
-        do_min_max = 'yes'
-        try:
-           if (parent is not None) and (parent.iso_spacing == 'Log'):
-              do_min_max = 'no'
-        except:
-           pass
-        if ( do_min_max == 'yes' ):
-             minv = []
-             maxv=[]
-             if (min is None) or (max is None):
-                for i in range(len(self.vcs_self.animate_info)):
-                   minv.append( 1.0e77 )
-                   maxv.append( -1.0e77 )
-                for i in range(len(self.vcs_self.animate_info)):
-                   dpy, slab = self.vcs_self.animate_info[i]
-                   mins, maxs = vcs.minmax(slab)
-                   minv[i] = float(numpy.minimum(float(minv[i]), float(mins)))
-                   maxv[i] = float(numpy.maximum(float(maxv[i]), float(maxs)))
-             elif ((type(min) == types.ListType) or (type(max) == types.ListType)):
-                for i in range(len(self.vcs_self.animate_info)):
-                   try:
-                      minv.append( min[i] )
-                   except:
-                      minv.append( min[-1] )
-                   try:
-                      maxv.append( max[i] )
-                   except:
-                      maxv.append( max[-1] )
-             else:
-                for i in range(len(self.vcs_self.animate_info)):
-                    minv.append( min )
-                    maxv.append( max )
-             # Set the min an max for each plot in the page. If the same graphics method is used
-             # to display the plots, then the last min and max setting of the data set will be used.
-             for i in range(len(self.vcs_self.animate_info)):
-                try:
-                   self.set_animation_min_max( minv[i], maxv[i], i )
-                except Exception,err:
-                   pass # if it is default, then you cannot set the min and max, so pass.
-
-        self.allArgs = []
-        for i in range(alen):
-            #y.clear()
-            frameArgs = []
-            for I in self.vcs_self.animate_info:
-                d=I[0]
-                kw={}
-                n = len(I[1][0].shape)
-                for j,id in enumerate(I[1][0].getAxisIds()):
-                    if j!=axis and j<n-2:
-                        kw[id]=slice(0,1)
-                    elif j==axis:
-                        kw[id]=slice(i,i+1)
-                    else:
-                        break
-                args = [I[1][0](**kw),]
-                if I[1][1] is not None:
-                    kw={}
-                    n = len(I[1][1].shape)
-                    for j,id in enumerate(I[1][1].getAxisIds()):
-                        if j!=axis and j<n-2:
-                            kw[id]=slice(0,1)
-                        elif j==axis:
-                            kw[id]=slice(i,i+1)
-                        else:
-                            break
-                    args.append(I[1][1](**kw))
-                args += [d.template,d.g_type,d.g_name]
-                #b=y.getboxfill(d.g_name)
-                #y.plot(*args,bg=1)
-                frameArgs.append(args)
-            self.allArgs.append(frameArgs)
-
-        if sender is None:
-            for i in xrange(len(self.allArgs)):
-                self.renderFrame(i)
-            self.restore_min_max()
-            self.canvas = None
-            self.animationCreated()
-        else:
-            sender.animationTimer.start(0, sender)
-            sender.dialog.setRange(0, len(self.allArgs))
-            sender.dialog.show()
-
-    def animationCreated(self):
-        self.create_flg = 1
-        self.restore_min_max()
-        self.canvas = None
-        self.signals.created.emit()
-
-    def animationCanceled(self):
-        self.create_flg = 0
-        self.restore_min_max()
-        self.signals.canceled.emit()
-
-    def renderFrame(self, i):
-        if self.animation_seed is None:
-            self.animation_seed = numpy.random.randint(10000000)
-        frameArgs = self.allArgs[i]
-        fn = os.path.join(os.environ["HOME"],".uvcdat","__uvcdat_%i_%i.png" % (self.animation_seed,i))
-        self.animation_files.append(fn)
-
-        #BB: this clearing and replotting somehow fixes vcs internal state
-        # and prevents segfaults when running multiple animations
-        self.vcs_self.replot()
-
-
-
-        self.canvas.clear()
-        self.vcs_self.plot(*frameArgs[0],bg=1)
-        self.vcs_self.clear()
-        for args in frameArgs:
-            self.canvas.plot(*args, bg=1)
-        self.canvas.png(fn,draw_white_background=1)
-        #self.canvas.png("sample")
-        
-    # def runner(self):
-    #     self.runit = True
-    #     while self.runit:
-    #         for fn in self.animation_files:
-    #             if not self.runit:
-    #                 self.run_flg = 0
-    #                 break
-    #             self.vcs_self.canvas.put_png_on_canvas(fn,self.zoom_factor,self.vertical_factor,self.horizontal_factor)
-    #             import time
-    #             time.sleep(self.pause_value)
-
-    def next(self):
-        """Draws next frame of animation
-        """
-        if self.create_flg == 1:
-            if self.current_frame < len(self.animation_files)-1:
-                self.current_frame += 1
-            elif self.loop or self.first_run:
-                self.current_frame = 0
-            else:
-                self.pause_run()
-            self.draw(self.current_frame)
-        else:
-            self.pause_run()
-        if self.first_run:
-            self.first_run = False
-
-    def run(self,*args):
-        if self.create_flg == 1 and self.run_flg == 0:
-            self.first_run = True
-            self.run_flg = 1
-            self.runTimer.start()
-
-    def pause_run(self):
-        self.run_flg = 0
-        self.runTimer.stop()
-        self.signals.paused.emit()
-
-    def draw(self, frame):
-        #print "Clearing!!!!!!"
-        if self.create_flg == 1:
-            self.current_frame = frame
-            self.vcs_self.canvas.put_png_on_canvas(self.animation_files[frame],
-                    self.zoom_factor, self.vertical_factor, self.horizontal_factor)
-            self.signals.drew.emit()
-        
-    def frame(self, frame):
-        self.draw(frame)
-
-    def save(self,movie,bitrate=1024, rate=None, options=''):
-        if self.create_flg == 1:
-            fnms = os.path.join(os.environ["HOME"],".uvcdat","__uvcdat_%i_%%d.png" %      (self.animation_seed))
-            if rate is None:
-                rate = self.fps()
-            self.vcs_self.ffmpeg(movie, fnms, bitrate, rate, options)
-
-    def number_of_frames(self):
-        return len(self.animation_files)
-
-    def stop(self):
-        self.pause_run()
-        self.current_frame = 0
-
-    def pause(self, value):
-        value = max(value, 0.0001)
-        self.fps(1/value)
-
-    def zoom(self,value):
-        self.zoom_factor = value
-
-    def horizontal(self,value):
-        self.horizontal_factor = value
-
-    def vertical(self,value):
-        self.vertical_factor = value
-
-    def fps(self, value=None):
-        if value is not None:
-            value = max(value, 0.0001)
-            self.frames_per_second = value
-            self.runTimer.setInterval(1000/value)
-            return self
-        return self.frames_per_second
-
-    
-############################################################################
-#        END OF FILE                                                       #
-############################################################################
