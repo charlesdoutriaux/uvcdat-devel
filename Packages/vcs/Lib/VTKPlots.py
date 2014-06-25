@@ -8,6 +8,7 @@ from vtk.util import numpy_support as VN
 import meshfill,boxfill,isofill,isoline
 import os
 import cdms2
+import DV3D
 
    
 def smooth(x,beta,window_len=11):
@@ -20,10 +21,27 @@ def smooth(x,beta,window_len=11):
    return y[(window_len/2):-(window_len/2)]
 
 class VCSInteractorStyle(vtk.vtkInteractorStyleUser):
+    
   def __init__(self,parent=None):
-    self.AddObserver("LeftButtonPressEvent",parent.leftButtonPressEvent)
-    self.AddObserver("LeftButtonReleaseEvent",parent.leftButtonReleaseEvent)
-    self.AddObserver("ConfigureEvent",parent.configureEvent)
+      self.parent = parent
+      self.AddObserver("LeftButtonPressEvent", parent.leftButtonPressEvent )
+      self.AddObserver("LeftButtonReleaseEvent", parent.leftButtonReleaseEvent )
+      self.AddObserver( "ModifiedEvent", parent.configureEvent )
+      
+#  def onAnyEvent( self, obj, event ):
+#      print " VCSInteractorStyle Event: ", event 
+#       self.AddObserver("LeftButtonPressEvent",parent.leftButtonPressEvent)
+#       self.AddObserver("LeftButtonReleaseEvent",parent.leftButtonReleaseEvent)
+#       
+#   def OnLeftButtonDown(self):
+#       print " OnLeftButtonDown "
+#       self.parent.leftButtonPressEvent( self, "LeftButtonPressEvent" )
+#  
+#   def OnLeftButtonUp(self):
+#       self.parent.leftButtonReleaseEvent( self, "LeftButtonReleaseEvent" )
+# 
+#   def OnConfigure(self):
+#       self.parent.configureEvent( self, "ConfigureEvent" )
 
 class VTKVCSBackend(object):
   def __init__(self,canvas,renWin=None, debug=False,bg=None):
@@ -39,12 +57,15 @@ class VTKVCSBackend(object):
       self.renWin = renWin
       if renWin.GetInteractor() is None:
         self.createDefaultInteractor()
-
-
+        
   def interact(self,*args,**kargs):
       warnings.warn("Press 'Q' to exit interactive mode and continue script execution")
       self.renWin.GetInteractor().Start()
 
+  def leftButtonPressTest(self,obj,event):
+      istyle = obj.GetInteractorStyle()
+      print 'LeftButtonPressTest: istyle = ', str(istyle)
+  
   def leftButtonPressEvent(self,obj,event):
     xy = self.renWin.GetInteractor().GetEventPosition()
     sz = self.renWin.GetSize()
@@ -100,8 +121,7 @@ class VTKVCSBackend(object):
     self.clickRenderer= ren
     self.renWin.AddRenderer(ren)
     self.renWin.Render()
-
-
+      
   def leftButtonReleaseEvent(self,obj,event):
     self.clickRenderer.RemoveAllViewProps()
     self.clickRenderer.Render()
@@ -144,34 +164,35 @@ class VTKVCSBackend(object):
     #self.renWin.Render()
     self.numberOfPlotCalls = 0 
 
-  def createDefaultInteractor(self,style=vtk.vtkInteractorStyleUser()):
+  def createDefaultInteractor( self, ren=None ):
     defaultInteractor = self.renWin.GetInteractor()
     if defaultInteractor is None:
       defaultInteractor = vtk.vtkRenderWindowInteractor()
-    if style is not None:
-      defaultInteractor.SetInteractorStyle(style)
-    try:
-      defaultInteractor.RemoveObservers("LeftButtonPressEvent")
-    except:
-      pass
-    try:
-      defaultInteractor.RemoveObservers("LeftButtonReleaseEvent")
-    except:
-      pass
-    try:
-      defaultInteractor.RemoveObservers("ConfigureEvent")
-    except:
-      pass
-    # Configure not picked up on MAc and Ubuntu 14 so using ModifiedEvent (same trick as vistrails)
-    try:
-        defaultInteractor.RemoveObservers("ModifiedEvent")
-    except:
-        pass
-    defaultInteractor.AddObserver("ModifiedEvent",self.configureEvent)
-    defaultInteractor.AddObserver("LeftButtonPressEvent",self.leftButtonPressEvent)
-    defaultInteractor.AddObserver("LeftButtonReleaseEvent",self.leftButtonReleaseEvent)
-    defaultInteractor.AddObserver("ConfigureEvent",self.configureEvent)
+    self.vcsInteractorStyle = VCSInteractorStyle(self)
+    if ren: self.vcsInteractorStyle.SetCurrentRenderer( ren )
+    defaultInteractor.SetInteractorStyle( self.vcsInteractorStyle )
+#     try:
+#       defaultInteractor.RemoveObservers("LeftButtonPressEvent")
+#     except:
+#       pass
+#     try:
+#       defaultInteractor.RemoveObservers("LeftButtonReleaseEvent")
+#     except:
+#       pass
+#     try:
+#       defaultInteractor.RemoveObservers("ConfigureEvent")
+#     except:
+#       pass
+#     # Configure not picked up on MAc and Ubuntu 14 so using ModifiedEvent (same trick as vistrails)
+#     try:
+#         defaultInteractor.RemoveObservers("ModifiedEvent")
+#     except:
+#         pass
+# #     defaultInteractor.AddObserver("ModifiedEvent",self.configureEvent)
+#    defaultInteractor.AddObserver("LeftButtonPressEvent",self.leftButtonPressTest)
+#     defaultInteractor.AddObserver("LeftButtonReleaseEvent",self.leftButtonReleaseEvent)
     defaultInteractor.SetRenderWindow(self.renWin)
+    self.vcsInteractorStyle.On()
 
   def createRenWin(self,*args,**kargs):
     if self.renWin is None:
@@ -182,12 +203,12 @@ class VTKVCSBackend(object):
       ren = vtk.vtkRenderer()
       r,g,b = self.canvas.backgroundcolor
       ren.SetBackground(r/255.,g/255.,b/255.)
-      self.createDefaultInteractor()
+      self.createDefaultInteractor(ren)
       self.renWin.AddRenderer(ren)
       return True
     else:
       return False
-
+      
   def update(self, *args, **kargs):
     if self.renWin is not None:
       #self.renWin.Render()
@@ -284,6 +305,9 @@ class VTKVCSBackend(object):
     if gtype in ["boxfill","meshfill","isofill","isoline"]:
       self.renWin.AddRenderer(ren)
       self.plot2D(data1,data2,tpl,gm,ren)
+    elif gtype in ["dv3d"]:
+      self.renWin.AddRenderer(ren)
+      self.plot3D(data1,data2,tpl,gm,ren)
     elif gtype in ["text"]:
       if tt.priority!=0:
         self.renWin.AddRenderer(ren)
@@ -344,7 +368,6 @@ class VTKVCSBackend(object):
     else:
       y1,y2 = Y.min(),Y.max()
     l.worldcoordinate = [x1,x2,y1,y2]
-
     m=self.canvas.createmarker()
     m.type = gm.marker
     m.color = gm.markercolor
@@ -353,26 +376,27 @@ class VTKVCSBackend(object):
     m.y=l.y
     m.viewport=l.viewport
     m.worldcoordinate = l.worldcoordinate
-
+    
     self.canvas.plot(l,renderer=ren,donotstoredisplay=True)
     self.canvas.plot(m,renderer=ren,donotstoredisplay=True)
-    tmpl.plot(self.canvas,data1,gm,bg=self.bg,renderer=ren,X=X,Y=Y)
+    ren2 = vtk.vtkRenderer()
+    tmpl.plot(self.canvas,data1,gm,bg=self.bg,renderer=ren2,X=X,Y=Y)
     
-    legd = self.canvas.createline()
-    legd.x = [tmpl.legend.x1, tmpl.legend.x2]
-    legd.y = [tmpl.legend.y1, tmpl.legend.y1]
-    legd.color = l.color
-    legd.width = l.width
-    legd.type  = l.type
-
-
-    t=self.canvas.createtext(To_source=tmpl.legend.textorientation,Tt_source=tmpl.legend.texttable)
-    t.x=tmpl.legend.x2
-    t.y=tmpl.legend.y2
-    t.string=data1.id
-    self.canvas.plot(t,renderer=ren,donotstoredisplay=True)
-    self.canvas.plot(legd,renderer=ren,donotstoredisplay=True)
-    legd.list()
+    if tmpl.legend.priority>0:
+        ren2 = vtk.vtkRenderer()
+        self.setLayer(ren2,tmpl.legend.priority)
+        legd = self.canvas.createline()
+        legd.x = [tmpl.legend.x1, tmpl.legend.x2]
+        legd.y = [tmpl.legend.y1, tmpl.legend.y1]
+        legd.color = l.color
+        legd.width = l.width
+        legd.type  = l.type
+        t=self.canvas.createtext(To_source=tmpl.legend.textorientation,Tt_source=tmpl.legend.texttable)
+        t.x=tmpl.legend.x2
+        t.y=tmpl.legend.y2
+        t.string=data1.id
+        self.canvas.plot(t,renderer=ren2,donotstoredisplay=True)
+        self.canvas.plot(legd,renderer=ren2,donotstoredisplay=True)
   
   def setLayer(self,renderer,priority):
     n = self.numberOfPlotCalls + (priority-1)*10000 
@@ -381,6 +405,20 @@ class VTKVCSBackend(object):
     renderer.SetLayer(n)
     pass
 
+  def plot3D(self,data1,data2,tmpl,gm,ren):
+      from DV3D.Application import DV3DApp
+      requiresFileVariable = True
+      if ( data1 is None ) or ( requiresFileVariable and not isinstance(data1, cdms2.fvariable.FileVariable ) ):
+          raise Exception, "Error, must pass a FileVariable as the first input to the dv3d gm"
+      g = DV3DApp() 
+      n_overview_points = 500000
+      grid_coords = ( None, None, None, None )
+      var_proc_op = None
+      interface = None
+      roi = None # ( 0, 0, 50, 50 )
+      g.gminit( data1, data2, roi=roi, axes=gm.axes, n_overview_points=n_overview_points, renwin=ren.GetRenderWindow()  ) #, plot_type = PlotType.List  ) 
+
+      
   def plot2D(self,data1,data2,tmpl,gm,ren):
     self.setLayer(ren,tmpl.data.priority)
     continents = False
@@ -806,6 +844,9 @@ class VTKVCSBackend(object):
           a=A.GetNextActor()
   def Animate(self,*args,**kargs):
     return VTKAnimate(*args,**kargs)
+
+  def gettextextent(self,textorientation,texttable):
+      warnings.warn("Please implement gettextextent for VTK Backend")
 
 class VTKAnimate(animate_helper.animate_obj):
   def __init__(self,*args,**kargs):

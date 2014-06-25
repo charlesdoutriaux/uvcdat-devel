@@ -377,7 +377,7 @@ def prepMarker(renWin,ren,marker,cmap=None):
     x = marker.x[i]
     y=marker.y[i]
     c=marker.color[i]
-    s=marker.size[i]
+    s=marker.size[i]/float(max(marker.worldcoordinate))*10.
     t=marker.type[i]
     N = max(len(x),len(y))
     for a in [x,y]:
@@ -390,7 +390,6 @@ def prepMarker(renWin,ren,marker,cmap=None):
 
     #  Type
     ## Ok at this point generates the source for glpyh
-    ### TODO Need to add custom glyphs from vcs ones
     gs = vtk.vtkGlyphSource2D()
     pd = None
     if t=='dot':
@@ -497,12 +496,12 @@ def prepMarker(renWin,ren,marker,cmap=None):
     if t[-5:]=="_fill":
       gs.FilledOn()
     gs.SetScale(s)
+    gs.Update()
 
 
     if pd is None:
       g.SetSourceConnection(gs.GetOutputPort())
-    else:
-      g.SetInputData(markers)
+    g.SetInputData(markers)
 
     a = vtk.vtkActor()
     m = vtk.vtkPolyDataMapper()
