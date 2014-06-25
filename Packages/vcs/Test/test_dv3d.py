@@ -35,9 +35,10 @@ else:
     f = cdms2.open( os.path.join( sys.prefix, "sample_data", "geos5-sample.nc") )
     u = f["uwnd"] 
 
+dv3d = vcs.createdv3d()
 x = vcs.init()
-dv3d = x.createdv3d()
 x.plot( u, dv3d )
+dv3d.VerticalScaling = 0.02
 x.interact()
 
 

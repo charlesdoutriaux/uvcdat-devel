@@ -10,7 +10,7 @@ import AutoAPI
 import xmldocs
 import cdtime
 import vcs
-
+import DV3D
 
 class Gfdv3d(object,AutoAPI.AutoAPI):
 
@@ -52,15 +52,41 @@ class Gfdv3d(object,AutoAPI.AutoAPI):
             raise ValueError,"DV3D graphic method '%s' already exists" % Gfdv3d_name
         self._name = Gfdv3d_name
         self.g_name='Gfdv3d'
-            
-        if Gfdv3d_name=="default": 
-            self._axes="xyz"
-        elif Gfdv3d_name=="hovmuller": 
+                        
+        if Gfdv3d_name=="hovmuller": 
             self._axes="xyt"
+        else:
+            self._axes="xyz"
+            
+        self.addParameters()
             
         vcs.elements["dv3d"][Gfdv3d_name]=self
+
+    def add_property(self, name ):
+        fget = lambda self: self.getParameter(name)
+        fset = lambda self, value: self.setParameter(name, value)
+        setattr(self.__class__, name, property(fget, fset))
+
+                
+    def addParameters(self):
+        from DV3D.ButtonBarWidget import ButtonBarWidget
+        parameterMetadata = ButtonBarWidget.getParameterMetadata()
+        self.parameter_names = []
+        for mdata in parameterMetadata:
+            self.add_property( mdata[0] )
+            self.parameter_names.append( mdata[0] )
+#            print "  ------------->> Adding parameter: ", mdata[0]
+            
+    def getParameter(self, param_name ):
+        print ' getParameter: ', param_name
+        return 0.0
+
+    def setParameter(self, param_name, data ):
+        print '  <<---------------------------------------------------->> Set Parameter: ', param_name, " = ", str( data )
 
     def list(self):
         print ' ---------- DV3D (Gfdv3d) member (attribute) listings ---------'
         print 'name =',self.name
         print 'axes =',self.axes
+        for pname in self.parameter_names:
+            print ' = '.join( [ pname, self.getParameter( pname ) ] )
