@@ -171,6 +171,8 @@ class RectGridPlot(StructuredGridPlot):
         if args and args[0] == "StartConfig":
             pass
         elif args and args[0] == "Init":
+            if config_function.initial_value == None:       
+                config_function.initial_value = [ 1.0, 1.0 ]  
             self.setOpacity( config_function.initial_value )
             self.adjustOpacity( config_function.initial_value )
         elif args and args[0] == "EndConfig":
@@ -196,10 +198,11 @@ class RectGridPlot(StructuredGridPlot):
             pass
         elif args and args[0] == "Init":
             init_range = self.getDataRangeBounds()
-            config_function.setRangeBounds( init_range )  
-            config_function.initial_value = init_range  
-            self.scaleColormap( init_range )
-            self.generateCTF( init_range )
+            config_function.setRangeBounds( init_range ) 
+            if config_function.initial_value == None:       
+                config_function.initial_value = init_range  
+            self.scaleColormap( config_function.initial_value )
+            self.generateCTF( config_function.initial_value )
             colorScaleRange.setValues( init_range )
         elif args and args[0] == "EndConfig":
             pass
@@ -229,11 +232,12 @@ class RectGridPlot(StructuredGridPlot):
             pass
         elif args and args[0] == "Init":
             init_range = self.getSgnRangeBounds()
-            config_function.setRangeBounds( init_range )   
-            config_function.initial_value = init_range 
-            init_value = (init_range[0]+init_range[1])/2.0 
-            self.setIsosurfaceLevel( init_value ) 
-            isosurfaceValue.setValues( [ init_value ] )
+            config_function.setRangeBounds( init_range )
+            if config_function.initial_value == None:
+                init_value = (init_range[0]+init_range[1])/2.0          
+                config_function.initial_value = init_value             
+            self.setIsosurfaceLevel( config_function.initial_value ) 
+            isosurfaceValue.setValues( [ config_function.initial_value ] )
         elif args and args[0] == "EndConfig":
             pass
         elif args and args[0] == "InitConfig":
@@ -255,10 +259,11 @@ class RectGridPlot(StructuredGridPlot):
             pass
         elif args and args[0] == "Init":
             init_range = self.getSgnRangeBounds()
-            config_function.setRangeBounds( init_range )   
-            config_function.initial_value = init_range  
-            self.generateOTF( init_range )
-            volumeThresholdRange.setValues( init_range )
+            config_function.setRangeBounds( init_range )
+            if config_function.initial_value == None:      
+                config_function.initial_value = init_range   
+            self.generateOTF( config_function.initial_value )
+            volumeThresholdRange.setValues( config_function.initial_value )
         elif args and args[0] == "EndConfig":
             pass
         elif args and args[0] == "InitConfig":
@@ -286,10 +291,11 @@ class RectGridPlot(StructuredGridPlot):
             primaryInput = self.input()
             bounds = list( primaryInput.GetBounds() ) 
             init_range = [ bounds[2*plane_index], bounds[2*plane_index+1] ]
-            config_function.setRangeBounds( init_range )    
-            config_function.initial_value = init_range[0] 
-            slicePosition.setValues( init_range ) 
-            plane_widget.SetSlicePosition( config_function.initial_value )
+            config_function.setRangeBounds( init_range ) 
+            if config_function.initial_value == None:
+                config_function.initial_value = init_range
+            slicePosition.setValues( [ config_function.initial_value[0] ] ) 
+            plane_widget.SetSlicePosition( config_function.initial_value[0] )
             if config_function.key == 'z':
                 self.ProcessIPWAction( plane_widget, ImagePlaneWidget.InteractionUpdateEvent, action = ImagePlaneWidget.Pushing )
         elif args and args[0] == "EndConfig":
@@ -315,7 +321,7 @@ class RectGridPlot(StructuredGridPlot):
             self.ProcessIPWAction( plane_widget, ImagePlaneWidget.InteractionUpdateEvent, action = ImagePlaneWidget.Pushing )
 
  
-    def resetCamera(self):
+    def resetCamera(self, **args):
         self.cropRegion = self.getVolumeBounds()
         self.cropZextent = None
         self.cropVolume( False ) 
@@ -329,9 +335,9 @@ class RectGridPlot(StructuredGridPlot):
             for ib in [4,5]: 
                 self.cropRegion[ib] = ( origin[int(ib/2)] + new_spacing[int(ib/2)]*extent[ib-4] ) 
             if (self.volumeMapper <> None) and self.volumeMapper.GetCropping():
-                self.cropVolume( False ) 
-#         self.volume.Modified()
-#         self.updateModule()
+                self.cropVolume( False )                 
+        if self.planeWidgetZ.IsVisible():      
+            self.planeWidgetZ.UpdateInputs()
          
     def activateEvent( self, caller, event ):
         StructuredGridPlot.activateEvent( self, caller, event )
@@ -992,16 +998,16 @@ class RectGridPlot(StructuredGridPlot):
 #        print "  --- Volume Input Extent: %s " % str( self.input().GetWholeExtent() )
         pass          
 
-    def onKeyEvent(self, eventArgs ):
-        key = eventArgs[0]
-        ctrl = eventArgs[2]
-        if (  ( key == 'W' ) and ctrl        ): 
-            bbar = self.getInteractionButtons()  
-            bbar.releaseSliders() 
-            for index in range(3):  self.modifySlicePlaneVisibility( index, "xyz"[index], False )              
-        else:                   
-            return StructuredGridPlot.onKeyEvent( self, eventArgs )
-        return 1 
+#     def onKeyEvent(self, eventArgs ):
+#         key = eventArgs[0]
+#         ctrl = eventArgs[2]
+#         if (  ( key == 'W' ) and ctrl        ): 
+#             bbar = self.getInteractionButtons()  
+#             bbar.releaseSliders() 
+#             for index in range(3):  self.modifySlicePlaneVisibility( index, "xyz"[index], False )              
+#         else:                   
+#             return StructuredGridPlot.onKeyEvent( self, eventArgs )
+#         return 1 
         
     def showConfigureButton(self):                                                                                      
         config_button = self.getButton( names=['Configure'] ) # names=['ScaleColormap'] ) Configure

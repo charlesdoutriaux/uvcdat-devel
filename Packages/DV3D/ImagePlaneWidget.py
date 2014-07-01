@@ -48,7 +48,8 @@ class ImagePlaneWidget:
         self.ResliceAxes   = vtk.vtkMatrix4x4()   
         self.ResliceAxes2   = vtk.vtkMatrix4x4()   
         self.ContourInputDims = 0;     
-        self.InputDims = 0;     
+        self.InputDims = 0
+        self.CurrentPosition = 0.0    
                         
         # Represent the plane's outline
         #
@@ -60,7 +61,7 @@ class ImagePlaneWidget:
             
         # Represent the resliced image plane
         #
-        self.ColorMap = vtk.vtkImageMapToColors()
+        self.ColorMap = None
 #        self.ContourFilter = vtk.vtkContourFilter
         self.Reslice = vtk.vtkImageReslice()
         self.Reslice.TransformInputSamplingOff()
@@ -190,11 +191,11 @@ class ImagePlaneWidget:
 
     def SetRenderer( self, value ):
         self.CurrentRenderer = value
-        if self.CurrentRenderer: self.CurrentRenderer.AddObserver( 'ModifiedEvent', self.ActivateEvent )
+#        if self.CurrentRenderer: self.CurrentRenderer.AddObserver( 'ModifiedEvent', self.ActivateEvent )
 
 #----------------------------------------------------------------------------
 
-    def ActivateEvent( self, caller, event ):
+    def ActivateEvent( self, caller=None, event=None ):
         if self.Interactor == None: 
             if self.CurrentRenderer:
                 self.RenderWindow = self.CurrentRenderer.GetRenderWindow( )
@@ -252,6 +253,7 @@ class ImagePlaneWidget:
     
         self.CurrentRenderer.AddViewProp(self.PlaneOutlineActor)
         self.PlaneOutlineActor.SetProperty(self.PlaneProperty)
+        self.ActivateEvent()
     
         #add the TexturePlaneActor
         if (self.TextureVisibility):  
@@ -683,26 +685,27 @@ class ImagePlaneWidget:
         
         if ( self.PlaneOrientation == 1 ):
 #            pt1 = self.PlaneSource.GetPoint1()
-            y0 = center[1] # pt1[1] # center[1]       
+            y0 = self.CurrentPosition    
             self.PlaneSource.SetOrigin(bounds[0],y0,bounds[4])
             self.PlaneSource.SetPoint1(bounds[1],y0,bounds[4])
             self.PlaneSource.SetPoint2(bounds[0],y0,bounds[5])
             
         elif ( self.PlaneOrientation == 2 ):
-            
-            self.PlaneSource.SetOrigin(bounds[0],bounds[2],center[2])
-            self.PlaneSource.SetPoint1(bounds[1],bounds[2],center[2])
-            self.PlaneSource.SetPoint2(bounds[0],bounds[3],center[2])
+            z0 = self.CurrentPosition
+            self.PlaneSource.SetOrigin(bounds[0],bounds[2],z0)
+            self.PlaneSource.SetPoint1(bounds[1],bounds[2],z0)
+            self.PlaneSource.SetPoint2(bounds[0],bounds[3],z0)
             
         else: #default or x-normal
 #            pt1 = self.PlaneSource.GetPoint1()
-            x0 = center[0] # pt1[0] # center[0]
+            x0 = self.CurrentPosition
             self.PlaneSource.SetOrigin(x0,bounds[2],bounds[4])
             self.PlaneSource.SetPoint1(x0,bounds[3],bounds[4])
             self.PlaneSource.SetPoint2(x0,bounds[2],bounds[5])
                    
         self.UpdatePlane()
         self.BuildRepresentation()
+        self.ActivateEvent()
 
 #----------------------------------------------------------------------------
 
@@ -787,22 +790,14 @@ class ImagePlaneWidget:
         self.ImageData = inputData
         self.ImageData2 = inputData2
         
-        if(  not self.ImageData ):       
-            # If None is passed, remove any reference that Reslice had
-            # on the old ImageData
-            if vtk.VTK_MAJOR_VERSION <= 5:  self.Reslice.SetInput(None)
-            else:                           self.Reslice.SetInputData(None)                         
-            return
-                   
+        if not self.UpdateInputs(): return
+                  
         scalar_range = self.ImageData.GetScalarRange()
         
         if (  not self.UserControlledLookupTable ):       
             self.LookupTable.SetTableRange( scalar_range[0], scalar_range[1] )
             self.LookupTable.Build()
             
-        if vtk.VTK_MAJOR_VERSION <= 5:  self.Reslice.SetInput(self.ImageData)
-        else:                           self.Reslice.SetInputData(self.ImageData)                         
-        self.Reslice.Modified()
         dims = self.ImageData.GetDimensions()
         self.InputDims = 3 if ( ( len(dims) > 2 ) and ( dims[2] > 1 ) ) else 2
              
@@ -812,17 +807,42 @@ class ImagePlaneWidget:
 
         self.Texture.SetInterpolate(self.TextureInterpolate)
         
-        self.UpdateSlice()
-
+        self.TexturePlaneActor.GetMapper().Update()  
+        
+        if self.Reslice2:           
+            self.Reslice2.Update() 
+            
+    def UpdateInputs(self):
+        
+        if(  not self.ImageData ):       
+            if vtk.VTK_MAJOR_VERSION <= 5:  self.Reslice.SetInput(None)
+            else:                           self.Reslice.SetInputData(None)                         
+            return False
+        
+        if vtk.VTK_MAJOR_VERSION <= 5:  self.Reslice.SetInput(self.ImageData)
+        else:                           self.Reslice.SetInputData(self.ImageData) 
+                                
+        self.Reslice.Modified()        
+        self.Reslice.Update()
+        
+        if self.ColorMap == None:
+            self.ColorMap = vtk.vtkImageMapToColors()
+            self.ColorMap.SetOutputFormatToRGBA()
+            self.ColorMap.PassAlphaToOutputOn()
+                         
+        if vtk.VTK_MAJOR_VERSION <= 5:  self.ColorMap.SetInput(self.Reslice.GetOutput())
+        else:                           self.ColorMap.SetInputData(self.Reslice.GetOutput()) 
+        self.ColorMap.SetLookupTable(self.LookupTable)    
+        self.ColorMap.Update()  
+              
+        if vtk.VTK_MAJOR_VERSION <= 5:  self.Texture.SetInput(self.ColorMap.GetOutput())
+        else:                           self.Texture.SetInputData(self.ColorMap.GetOutput())  
+        
+        return True            
 
     def UpdateSlice(self):
-        self.Reslice.Update()
-        if vtk.VTK_MAJOR_VERSION <= 5:  self.ColorMap.SetInput(self.Reslice.GetOutput())
-        else:                           self.ColorMap.SetInputData(self.Reslice.GetOutput())                   
-        self.ColorMap.Update()        
-        if vtk.VTK_MAJOR_VERSION <= 5:  self.Texture.SetInput(self.ColorMap.GetOutput())
-        else:                           self.Texture.SetInputData(self.ColorMap.GetOutput())              
-        self.Texture.Update() 
+        self.UpdateInputs()
+#        self.Texture.Update() 
         self.TexturePlaneActor.GetMapper().Update()  
         
         if self.Reslice2:           
@@ -1011,7 +1031,6 @@ class ImagePlaneWidget:
 #            self.LookupTable.AddObserver( 'AnyEvent', self.LookupTableObserver )
 #            print " Image Plane Widget %x: SetLookupTable: %x " % ( id(self), id( self.LookupTable ) )
                
-        self.ColorMap.SetLookupTable(self.LookupTable)
         self.Texture.SetLookupTable(self.LookupTable)
         
         if( self.ImageData and  not self.UserControlledLookupTable):       
@@ -1022,6 +1041,7 @@ class ImagePlaneWidget:
 #----------------------------------------------------------------------------
 
     def SetSlicePosition( self, position ):
+        self.CurrentPosition = position
         planeOrigin = list( self.PlaneSource.GetOrigin() )    
         planeOrigin[ self.PlaneOrientation ] = position                      
         point1 = list( self.PlaneSource.GetPoint1() )    
@@ -1035,25 +1055,25 @@ class ImagePlaneWidget:
         self.BuildRepresentation()
         self.Modified()
 
-    def PushSlicePosition( self, position ):
-    
-        amount = 0.0
-        planeOrigin = self.PlaneSource.GetOrigin()
-        
-        if ( self.PlaneOrientation == 2 ): # z axis        
-            amount = position - planeOrigin[2]       
-        elif ( self.PlaneOrientation == 0 ): # x axis        
-            amount = position - planeOrigin[0]        
-        elif ( self.PlaneOrientation == 1 ):  #y axis       
-            amount = position - planeOrigin[1]
-                
-#        print " >+++++++++> ImagePlaneWidget[%d].SetSlice: Push=%.2f " % ( self.PlaneIndex, amount )
-        planeOrigin = self.PlaneSource.GetOrigin()
-        self.PlaneSource.Push( amount )
-        planeOrigin = self.PlaneSource.GetOrigin()
-        self.UpdatePlane()
-        self.BuildRepresentation()
-        self.Modified()
+#     def PushSlicePosition( self, position ):
+#     
+#         amount = 0.0
+#         planeOrigin = self.PlaneSource.GetOrigin()
+#         
+#         if ( self.PlaneOrientation == 2 ): # z axis        
+#             amount = position - planeOrigin[2]       
+#         elif ( self.PlaneOrientation == 0 ): # x axis        
+#             amount = position - planeOrigin[0]        
+#         elif ( self.PlaneOrientation == 1 ):  #y axis       
+#             amount = position - planeOrigin[1]
+#                 
+# #        print " >+++++++++> ImagePlaneWidget[%d].SetSlice: Push=%.2f " % ( self.PlaneIndex, amount )
+#         planeOrigin = self.PlaneSource.GetOrigin()
+#         self.PlaneSource.Push( amount )
+#         planeOrigin = self.PlaneSource.GetOrigin()
+#         self.UpdatePlane()
+#         self.BuildRepresentation()
+#         self.Modified()
 
 #----------------------------------------------------------------------------
     def GetSlicePosition(self):
@@ -1095,18 +1115,21 @@ class ImagePlaneWidget:
             planeOrigin[2] = origin[2] + index*spacing[2]
             pt1[2] = planeOrigin[2]
             pt2[2] = planeOrigin[2]
+            self.CurrentPosition = planeOrigin[2]
         
         elif ( self.PlaneOrientation == 1 ):
         
             planeOrigin[1] = origin[1] + index*spacing[1] 
             pt1[1] = planeOrigin[1]
             pt2[1] = planeOrigin[1]
+            self.CurrentPosition = planeOrigin[1]
         
         elif ( self.PlaneOrientation == 0 ):
         
             planeOrigin[0] = origin[0] + index*spacing[0] 
             pt1[0] = planeOrigin[0]
             pt2[0] = planeOrigin[0]
+            self.CurrentPosition = planeOrigin[0]
         
         
 #        if self.PlaneIndex == 0: 
@@ -1381,11 +1404,8 @@ class ImagePlaneWidget:
         self.SetResliceInterpolate(self.ResliceInterpolate)       
         self.LookupTable = self.CreateDefaultLookupTable()
         
-        self.ColorMap.SetLookupTable(self.LookupTable)
-        self.ColorMap.SetOutputFormatToRGBA()
-        self.ColorMap.PassAlphaToOutputOn()
-        self.ColorMap.Update()
-        
+        self.UpdateInputs()
+                
         texturePlaneMapper  = vtk.vtkPolyDataMapper()
         if vtk.VTK_MAJOR_VERSION <= 5:  texturePlaneMapper.SetInput( self.PlaneSource.GetOutput() )
         else:                           texturePlaneMapper.SetInputData( self.PlaneSource.GetOutput() ) 

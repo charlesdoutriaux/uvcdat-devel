@@ -11,6 +11,7 @@ import xmldocs
 import cdtime
 import vcs
 import DV3D
+from DV3D.ConfigurationFunctions import CfgManager
 
 class Gfdv3d(object,AutoAPI.AutoAPI):
 
@@ -69,21 +70,22 @@ class Gfdv3d(object,AutoAPI.AutoAPI):
 
                 
     def addParameters(self):
-        from DV3D.ButtonBarWidget import ButtonBarWidget
-        parameterMetadata = ButtonBarWidget.getParameterMetadata()
+        parameterMetadata = CfgManager.getParameterMetadata()
         self.parameter_names = []
         for mdata in parameterMetadata:
             self.add_property( mdata[0] )
             self.parameter_names.append( mdata[0] )
 #            print "  ------------->> Adding parameter: ", mdata[0]
             
-    def getParameter(self, param_name ):
-        print ' getParameter: ', param_name
-        return 0.0
+    def getParameter(self, param_name, **args ):
+        return CfgManager.getParameterValue( param_name, **args )
 
-    def setParameter(self, param_name, data ):
-        print '  <<---------------------------------------------------->> Set Parameter: ', param_name, " = ", str( data )
-
+    def setParameter(self, param_name, data, **args ):
+        CfgManager.setParameter( param_name, data, **args )
+        
+    def restoreState(self):
+        CfgManager.restoreState()
+        
     def list(self):
         print ' ---------- DV3D (Gfdv3d) member (attribute) listings ---------'
         print 'name =',self.name

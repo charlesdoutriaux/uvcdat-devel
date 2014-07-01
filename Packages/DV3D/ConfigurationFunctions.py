@@ -12,8 +12,9 @@ from weakref import WeakSet, WeakKeyDictionary
 SLICE_WIDTH_LR_COMP = [ 'xlrwidth', 'ylrwidth', 'zlrwidth' ]
 SLICE_WIDTH_HR_COMP = [ 'xhrwidth', 'yhrwidth', 'zhrwidth' ]
 
-packagePath = os.path.dirname( __file__ )  
-defaultMapDir = os.path.join( packagePath, 'data' )
+packagePath = os.path.dirname( __file__ ) 
+DataDir = os.path.join( packagePath, 'data' ) 
+defaultMapDir = DataDir 
 defaultOutlineMapFile = os.path.join( defaultMapDir,  'political_map.png' )
 
 packagePath = os.path.dirname( __file__ )  
@@ -77,6 +78,26 @@ def deserialize_value( sval ):
             return float(sval)
         except ValueError:
             return sval
+
+def deserialize_str( sval ):
+    try:
+        return int(sval)
+    except ValueError:
+        try:
+            return float(sval)
+        except ValueError:
+            return sval
+
+def deserialize( data_obj ):
+    if isinstance( data_obj, tuple ) or isinstance( data_obj, list ):
+        return [ deserialize(item) for item in data_obj ]
+    if isinstance( data_obj, dict ):
+        rv = {}
+        for item in data_obj.items(): rv[ deserialize(item[0]) ] = deserialize(item[0])
+        return rv
+    if isinstance( data_obj, str ):
+        return deserialize_str( data_obj )
+    return data_obj
 
 def get_value_decl( val ):
     if isinstance( val, bool ): return "bool"
@@ -180,14 +201,47 @@ class SIGNAL(object):
 
 class ConfigManager:
     
+    
     def __init__( self,  **args ): 
         self.ConfigCmd = SIGNAL("ConfigCmd")
-        self.cfgFile = None
-        self.cfgDir = None
+        self.cfgFile = os.path.join( DataDir, 'parameters.txt' )
+        self.stateFile = os.path.join( DataDir, 'state.txt' )
         self.config_params = {}
         self.iCatIndex = 0
         self.cats = {}
         self.metadata = args
+        self.configurableFunctions = {}
+        self.parameters = {}
+
+    def getParameter( self, param_name, **args ):
+        cparm = self.parameters.get( param_name, None )
+        if cparm == None:
+            cparm = ConfigParameter( param_name, **args )
+            self.parameters[ param_name ] = cparm
+        return cparm
+            
+        
+    def setParameter(self, param_name, data, **args ):
+        param = self.getParameter( param_name, **args )
+#        pdata = data if hasattr( data, '__iter__' ) else [ data ]
+        param.setValue( 'init', data )
+#        print '  <<---------------------------------------------------->> Set Parameter: ', param_name, " = ", str( data )
+
+    def getParameterValue(self, param_name, **args ):
+        param = self.getParameter( param_name, **args )
+        return None if ( param == None ) else param.getValues()
+        
+    def getConfigurableFunction(self, name, **args ):
+        rv = self.configurableFunctions.get( name, None )
+        if rv == None:
+            type = args.get( 'type', ConfigurableFunction.Default )
+            if type == ConfigurableFunction.Default:  rv = ConfigurableFunction( name, **args )
+            elif type == ConfigurableFunction.Slider: rv = ConfigurableSliderFunction( name, **args )
+            else:
+                print>>sys.stderr, "Error, Unknown Configurable Function Type: ", str(type)
+                return None
+            self.configurableFunctions[name] = rv
+        return rv
         
     def getMetadata(self, key=None ):
         return self.metadata.get( key, None ) if key else self.metadata
@@ -207,7 +261,7 @@ class ConfigManager:
             print>>sys.stderr, "Can't open config file: %s" % self.cfgFile
 
     def addParameter( self, config_name, **args ):
-        cparm = ConfigParameter.getParameter( config_name, **args )
+        cparm = self.getParameter( config_name, **args )
         categoryName = args.get('category', None )
         varname = args.get('varname', None )
         key_tok = [] 
@@ -228,6 +282,61 @@ class ConfigManager:
                 if parm: parm.initialize( cfg_tok[1] )
         except IOError:
             print>>sys.stderr, "Can't open config file: %s" % self.cfgFile                       
+
+    def saveParameterMetadata( self ):
+        try:
+            parameter_file = open( self.cfgFile, "w")
+            for cf in self.configurableFunctions.values():
+                parameter_file.write( cf.getParameterMetadata() + '\n' )        
+            parameter_file.close()
+            print " saved Parameter Metadata to file ", self.cfgFile
+
+        except Exception, err:
+            print>>sys.stderr, "Can't save parameter metadata: ", str(err)
+            
+    def saveState(self):
+        try:
+            state_file = open( self.stateFile, "w")
+            for cf in self.configurableFunctions.values():
+                state_data = cf.serializeState()
+                if state_data:
+                    state_file.write( state_data + '\n' )        
+            state_file.close()
+            print " saved state data to file ", state_file
+
+        except Exception, err:
+            print>>sys.stderr, "Can't save state data: ", str(err)
+
+    def restoreState( self ):
+        try:
+            state_file = open( self.stateFile, "r")
+            while True:
+                line = state_file.readline()
+                if line == "": break
+                serializedState = line.split('=')
+                cp = self.getParameter( serializedState[0] )
+                cp.restoreState( serializedState[1].strip() )
+   
+            state_file.close()
+
+        except Exception, err:
+            print>>sys.stderr, "Can't read state data: ", str(err)
+                  
+    def getParameterMetadata( self ):
+        try:
+            parameter_mdata = [ ]
+            parameter_file = open( self.cfgFile, "r")
+            while True:
+                line = parameter_file.readline()
+                if line == "": break
+                parameter_mdata.append( line.split(','))
+   
+            parameter_file.close()
+
+        except Exception, err:
+            print>>sys.stderr, "Can't read parameter metadata: ", str(err)
+            
+        return parameter_mdata
         
     def initParameters(self):
         if not self.cfgDir:
@@ -277,19 +386,30 @@ class ConfigParameter:
         self.ptype = args.get( 'ptype', name ) 
         self.values = args
         self.valueKeyList = list( args.keys() )
+        self.stateKeyList = []
 #        self.scaling_bounds = None
+            
+    def serializeState( self, **args ):
+        if len( self.stateKeyList ) == 0:
+            return None
+        state_parms = {}
+        for key in self.stateKeyList:
+            state_parms[key] = self.values[key]
+        state_parms.update( **args )
+        return str( state_parms ) 
 
-    @staticmethod
-    def getParameter( config_name, **args ):
-        ctype = args.get('ctype') 
-        return ConfigParameter( config_name, **args )
-     
+    def restoreState( self, stateData ) :
+        state = eval( stateData )
+        self.values.update( state )
+        self.values[ 'init' ] = self.getValues()
+        print " --> Restore state [%s] : %s " % ( self.name, stateData )
+                                    
     def __str__(self):
         return " ConfigParameter[%s]: %s " % ( self.name, str( self.values ) )
    
     def addValueKey( self, key ):
-        if not (key in self.valueKeyList):
-            self.valueKeyList.append( key ) 
+        if not (key in self.stateKeyList) or (key in self.valueKeyList):
+            self.stateKeyList.append( key ) 
                                 
     def pack( self ):
         try:
@@ -399,27 +519,50 @@ class ConfigParameter:
     def getRange( self ):
         return ( self.rmin, self.rmax )
 
+CfgManager = ConfigManager() 
+
 class ConfigurableFunction:
-    
-    CfgManager = ConfigManager() 
+
+    Default = 0
+    Slider = 1    
     ConfigurableFunctions = {}    
     
     def __init__( self, name, **args ):
         self.name = name
         self.persist = args.get( 'persist', True )
-        self.value = self.CfgManager.addParameter( name, **args )
+#         if name == 'XSlider':
+#             print "."
+        self.value = CfgManager.addParameter( name, **args )
         self.type = 'generic'
         self.kwargs = args
+        self.cfg_state = None
         self.label = args.get( 'label', self.name )
         self.units = args.get( 'units', '' ).strip().lower()
+        self.persist = bool( args.get( 'persist', True ) )
         self.key = args.get( 'key', None )
-        self.state = None
-        self.initial_value = makeList( args.get( 'initValue', None ), self.getValueLength() )
+        ival = self.value.getValue( 'init' )
+        if ival <> None:
+            self.initial_value = ival if hasattr( ival, '__iter__' ) else [ ival ]
+        else:    
+            self.initial_value = makeList( args.get( 'initValue', None ), self.getValueLength() )
 #        self.group = args.get( 'group', ConfigGroup.Display )  
         self.active = args.get( 'active', True )
         self.group = args.get( 'group', None )
         self._persisted = True
         self.interactionHandler = args.get( 'interactionHandler', None )
+        
+    def getState(self):
+        return self.value.getValue('state')
+
+    def setState(self,value):
+        return self.value.setValue('state',value)
+        
+    def serializeState(self):
+        state_data = self.value.serializeState() 
+        return None if ( (state_data == None) or not self.persist ) else "=".join( [ self.name, state_data ] ) 
+
+    def restoreState( self, stateData ):
+        self.value.restoreState( stateData )
      
     def sameGroup( self, config_fn ): 
         if id( self ) == id( config_fn ): return False
@@ -436,13 +579,13 @@ class ConfigurableFunction:
 
     @classmethod
     def activate( cls ):
-        cls.CfgManager.initParameters()
+        CfgManager.initParameters()
         
     def getValueLength(self):
         return 1
         
-    def open(self, state ):
-        self.state = state
+    def open(self, cfg_state ):
+        self.cfg_state = cfg_state
 
     def start( self, interactionState, x, y ) :
         pass

@@ -106,12 +106,36 @@ class DV3DPlot():
         self.colormapManagers= {}
         self.colormapWidget = None 
         self.colormapWindowSize = None
+        self.keyPressHandlers = {}
         interactionButtons = self.getInteractionButtons()
         interactionButtons.addSliderButton( names=['VerticalScaling'], key='Z', toggle=True, label='Vertical Scaling', sliderLabels='Vertical Scale', interactionHandler=self.processVerticalScalingCommand, range_bounds=[ 0.1, 10.0 ], initValue= 1.0 )
         interactionButtons.addConfigButton( names=['ChooseColormap'], key='m', toggle=True, interactionHandler=self.processChooseColormapCommand, initValue=[ 'jet', False, False ]  )
         interactionButtons.addConfigButton( names=['ToggleClipping'], key='X', toggle=True, parents=['ToggleVolumePlot', 'ToggleSurfacePlot'], interactionHandler=self.processToggleClippingCommand  )
         interactionButtons.addConfigButton( names=['Colorbar'], key='b', toggle=True, label='Show Colorbar', interactionHandler=self.processShowColorbarCommand )
+        self.addKeyPressHandler( 'r', self.resetCamera )
+        self.addKeyPressHandler( 'q',  self.quit )
+        self.addKeyPressHandler( 'Q',  self.quit )
+        self.addKeyPressHandler( 's',  self.saveState )
+        
+    def addKeyPressHandler( self, key, handler ):
+        handlers = self.keyPressHandlers.setdefault( key, [] )
+        handlers.append( handler )
+        
+    def quit( self, **args ):
+        eventArgs = args.get( 'args', None )
+        if eventArgs and ( eventArgs[1] == 'Q' ):
+            self.saveState()
+        self.renderWindowInteractor.TerminateApp() 
+            
+    def saveState(self, **args): 
+        print "Save State" 
+        CfgManager.saveState()
 
+    def processKeyPressHandler( self, key, eventArgs ):
+        handlers = self.keyPressHandlers.get( key, [] )
+        for handler in handlers: handler( args=eventArgs )
+        return len( handlers )
+            
     def processVerticalScalingCommand( self, args, config_function ):
         pass 
     
@@ -127,10 +151,12 @@ class DV3DPlot():
             self.render() 
 
     def initializePlots(self):
+#         bbar = ButtonBarWidget.getButtonBar( 'Plot' )
+#         button = bbar.getButton( 'XSlider' ) 
+#         button.setButtonState( 1 ) 
+#         bbar.initializeSliderPosition(0)  
         bbar = ButtonBarWidget.getButtonBar( 'Plot' )
-        button = bbar.getButton( 'XSlider' ) 
-        button.setButtonState( 1 ) 
-        bbar.centerSlider(0)  
+        bbar.initializeState()
         self.render()
         
     def processChooseColormapCommand( self, args, config_function ):
@@ -192,8 +218,12 @@ class DV3DPlot():
         interactor = caller.GetInteractor()
         keysym = interactor.GetKeySym() if caller else key
         ctrl = interactor.GetControlKey() if caller else args.get( 'ctrl', 0 )
-        self.onKeyEvent( [ key, keysym, ctrl ] ) 
-        return 0       
+        eventArgs = [ key, keysym, ctrl ] 
+        if self.processKeyPressHandler( key, eventArgs ): 
+            return 1
+        else: 
+            return self.onKeyEvent( ) 
+     
 #         
 #         if self.onKeyEvent( [ key, keysym, ctrl ] ):
 #             pass
@@ -375,7 +405,7 @@ class DV3DPlot():
         bbar = ButtonBarWidget.getButtonBar( bbar_name )
         if bbar == None:
             bbar = ButtonBarWidget( bbar_name, self.renderWindowInteractor )
-            config_button = bbar.addConfigButton( names=['Configure'], id='Configure', key='g', toggle=True, interactionHandler=self.processConfigurationToggle )
+            config_button = bbar.addConfigButton( names=['Configure'], id='Configure', key='g', toggle=True, persist=False, interactionHandler=self.processConfigurationToggle )
 #            config_button.StateChangedSignal.connect( self.togglePlotButtons )
             bbar.build()
         bbar.show()
@@ -430,7 +460,7 @@ class DV3DPlot():
             name = config_function.name
             bbar = ButtonBarWidget.getButtonBar( name )
             button = bbar.getButton( name )
-            self.toggleCongurationButtons( button.state)
+            self.toggleCongurationButtons( button.getState() )
          
     def processSlicingCommand( self, args, config_function = None ):
         pass
@@ -556,22 +586,25 @@ class DV3DPlot():
         return cmap_mgr
         
     def setColormap( self, data, **args ):
-        colormapName = str(data[0])
-        invertColormap = getBool( data[1] ) 
-        cmap_index = args.get( 'index', 0 )
-        metadata = self.getMetadata()
-        var_name = metadata.get( 'var_name', '')
-        var_units = metadata.get( 'var_units', '')
-#        self.updateStereo( enableStereo )
-        colormapManager = self.getColormapManager( name=colormapName, invert=invertColormap, index=cmap_index, units=var_units )
-        if( colormapManager.colorBarActor == None ): 
-            cm_title = str.replace( "%s (%s)" % ( var_name, var_units ), " ", "\n" )
-            cmap_pos = [ 0.9, 0.2 ] if (cmap_index==0) else [ 0.02, 0.2 ]
-            self.renderer.AddActor( colormapManager.createActor( pos=cmap_pos, title=cm_title ) )
-#        colormapManager.setColorbarVisibility( show_colorBar )
-        self.updatingColormap( cmap_index, colormapManager )
-        self.render() 
-        return True
+        try:
+            colormapName = str(data[0])
+            invertColormap = getBool( data[1] ) 
+            cmap_index = args.get( 'index', 0 )
+            metadata = self.getMetadata()
+            var_name = metadata.get( 'var_name', '')
+            var_units = metadata.get( 'var_units', '')
+    #        self.updateStereo( enableStereo )
+            colormapManager = self.getColormapManager( name=colormapName, invert=invertColormap, index=cmap_index, units=var_units )
+            if( colormapManager.colorBarActor == None ): 
+                cm_title = str.replace( "%s (%s)" % ( var_name, var_units ), " ", "\n" )
+                cmap_pos = [ 0.9, 0.2 ] if (cmap_index==0) else [ 0.02, 0.2 ]
+                self.renderer.AddActor( colormapManager.createActor( pos=cmap_pos, title=cm_title ) )
+    #        colormapManager.setColorbarVisibility( show_colorBar )
+            self.updatingColormap( cmap_index, colormapManager )
+            self.render() 
+            return True
+        except Exception, err:
+            print>>sys.stderr, "Error setting colormap: ", str(err)
         return False 
     
     def getUnits(self, var_index ):
@@ -610,7 +643,7 @@ class DV3DPlot():
         c = self.renderer.GetActiveCamera()
         self.cameraOrientation[ self.topo ] = ( c.GetPosition(), c.GetFocalPoint(), c.GetViewUp() )
 
-    def resetCamera( self, pts = None ):
+    def resetCamera( self, pts = None, **args ):
         cdata = self.cameraOrientation.get( self.topo, None )
         if cdata:
             self.renderer.GetActiveCamera().SetPosition( *cdata[0] )

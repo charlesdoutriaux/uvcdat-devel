@@ -36,9 +36,10 @@ else:
     u = f["uwnd"] 
 
 dv3d = vcs.createdv3d()
+dv3d.restoreState()
+
 x = vcs.init()
 x.plot( u, dv3d )
-dv3d.VerticalScaling = 0.02
 x.interact()
 
 

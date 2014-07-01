@@ -64,17 +64,17 @@ class StructuredGridPlot(DV3DPlot):
                 self.setZScale( vscale )
                 verticalScale.setValues( vscale )
 
-    def onKeyEvent(self, eventArgs ):
-        key = eventArgs[0]
-        md = self.getInputSpec().getMetadata()
-        if (  key == 'r'  ):
-            self.resetCamera()              
-        elif ( md and ( md.get('plotType','')=='xyz' ) and ( key == 't' )  ):
-            self.showInteractiveLens = not self.showInteractiveLens 
-            self.render() 
-        else:
-            return DV3DPlot.onKeyEvent( self, eventArgs )
-        return 1
+#     def onKeyEvent(self, eventArgs ):
+#         key = eventArgs[0]
+#         md = self.getInputSpec().getMetadata()
+#         if (  key == 'r'  ):
+#             self.resetCamera()              
+#         elif ( md and ( md.get('plotType','')=='xyz' ) and ( key == 't' )  ):
+#             self.showInteractiveLens = not self.showInteractiveLens 
+#             self.render() 
+#         else:
+#             return DV3DPlot.onKeyEvent( self, eventArgs )
+#         return 1
 
     def getRangeBounds( self, input_index = 0 ):
         ispec = self.inputSpecs[ input_index ] 
@@ -135,6 +135,7 @@ class StructuredGridPlot(DV3DPlot):
 
     def processScaleChange( self, old_spacing, new_spacing ):
         pass
+#        self.updateModule()
 
     def onSlicerRightButtonPress( self, caller, event ):
         self.currentButton = self.RIGHT_BUTTON
@@ -459,18 +460,11 @@ class StructuredGridPlot(DV3DPlot):
         else:                           clip1.SetInputData( baseImage )                
         clip1.SetOutputWholeExtent( extent[0], extent[1], extent[2], extent[3], extent[4], extent[5] )
         
-        clip0.Update()
-        clip1.Update()
         append = vtk.vtkImageAppend()
         append.SetAppendAxis( 0 )
-        if vtk.VTK_MAJOR_VERSION <= 5:
-            append.AddInput( clip1.GetOutput() )          
-            append.AddInput( clip0.GetOutput() )
-        else:
-            append.SetInputData (0, clip1.GetOutput() )
-            append.SetInputData (1, clip0.GetOutput() )
-           
-        append.Update()
+        append.SetInputConnection ( clip1.GetOutputPort() )
+        append.AddInputConnection ( clip0.GetOutputPort() )           
+        
         imageInfo = vtk.vtkImageChangeInformation()
         imageInfo.SetInputConnection( append.GetOutputPort() ) 
         imageInfo.SetOutputOrigin( 0.0, 0.0, 0.0 )
