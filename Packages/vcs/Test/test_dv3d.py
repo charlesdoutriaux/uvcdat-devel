@@ -13,9 +13,9 @@ class DataType:
    STRUCTURED = 0
    UNSTRUCTURED = 1                           
 
-data_type = DataType.UNSTRUCTURED
+data_type = DataType.STRUCTURED
 
-if data_type == DataType.STRUCTURED:
+if data_type == DataType.UNSTRUCTURED:
     
     proc_specs = subprocess.check_output('ps').split('\n')
     for proc_spec in proc_specs:
