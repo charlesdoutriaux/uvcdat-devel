@@ -29,17 +29,20 @@ if data_type == DataType.UNSTRUCTURED:
     testDataFile = os.path.join( testDataDir, 'WRF', 'wrfout_d03_2013-07-02_02-00-00.nc' )
     f = cdms2.open( testDataFile )
     u = f["U"] 
+    v = f["V"] 
     
 else:
     
     f = cdms2.open( os.path.join( sys.prefix, "sample_data", "geos5-sample.nc") )
     u = f["uwnd"] 
+    v = f["vwnd"] 
 
-dv3d = vcs.createdv3d()
-dv3d.restoreState()
+dv3d = vcs.createdv3d('vector')
+#dv3d.ScaleGlyphsByMagnitude = False
+dv3d.VectorDisplay = "stream"
 
 x = vcs.init()
-x.plot( u, dv3d )
+x.plot( u, v, dv3d )
 x.interact()
 
 
