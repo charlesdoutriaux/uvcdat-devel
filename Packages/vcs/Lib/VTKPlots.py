@@ -98,17 +98,29 @@ class VTKVCSBackend(object):
                 st+="Var: %s\nX = %g\nY[%i] = %g\nValue: %g" % (d.array[0].id,X,I,Y,V)
         except:
             st+="Var: %s\nX=%g\nY=%g\nValue = N/A" % (d.array[0].id,X,Y)
-    a=vtk.vtkTextActor()
-    a.SetInput(st)
-    #a.SetPosition(xy[0],xy[1])
-    p=a.GetProperty()
-    p.SetColor(0,0,0)
     ren = vtk.vtkRenderer()
-    #ren.SetLayer(1)
-    ren.AddActor(a)
     ren.SetBackground(.96,.96,.86)
     ren.SetViewport(x,y,min(x+.2,1.),min(y+.2,1))
     ren.SetLayer(self.renWin.GetNumberOfLayers()-1)
+    a=vtk.vtkTextActor()
+    a.SetInput(st)
+    p=a.GetProperty()
+    p.SetColor(0,0,0)
+    bb = [0,0,0,0]
+    a.GetBoundingBox(ren,bb)
+    ps=vtk.vtkPlaneSource()
+    ps.SetCenter(bb[0],bb[2],0.)
+    ps.SetPoint1(bb[1],bb[2],0.)
+    ps.SetPoint2(bb[0],bb[3],0.)
+    ps.Update()
+    m2d=vtk.vtkPolyDataMapper2D()
+    m2d.SetInputConnection(ps.GetOutputPort())
+    a2d=vtk.vtkActor2D()
+    a2d.SetMapper(m2d)
+    a2d.GetProperty().SetColor(.93,.91,.67)
+    ren.AddActor(a2d)
+    ren.AddActor(a)
+    ren.ResetCamera()
     self.clickRenderer= ren
     self.renWin.AddRenderer(ren)
     self.renWin.Render()
@@ -231,6 +243,20 @@ class VTKVCSBackend(object):
     else:
       return "portrait"
 
+  def portrait(self,W,H,x,y,clear):
+      if clear:
+          self.clear()
+      if self.renWin is None:
+          if W!=-99:
+              self.canvas.bgX = W
+              self.canvas.bgY = H
+          else:
+              W = self.canvas.bgX
+              self.canvas.bgX = self.canvas.bgY
+              self.canvas.bgY = W
+      else:
+          self.renWin.SetSize(W,H)
+
   def initialSize(self):
       #screenSize = self.renWin.GetScreenSize()
       self.renWin.SetSize(self.canvas.bgX,self.canvas.bgY)
@@ -250,7 +276,8 @@ class VTKVCSBackend(object):
       self.renWin.SetSize(x,y)
 
   def flush(self):
-      self.renWin.Render()
+      if self.renWin is not None:
+          self.renWin.Render()
 
   def plot(self,data1,data2,template,gtype,gname,bg,*args,**kargs):
     self.numberOfPlotCalls+=1
@@ -569,7 +596,7 @@ class VTKVCSBackend(object):
         if ug.IsA("vtkUnstructuredGrid"):
           cot.SetInputData(sFilter.GetOutput())
         else:
-          cot.SetInputData(ug.GetOutput())
+          cot.SetInputData(ug)
 
 
       levs = gm.levels
@@ -597,6 +624,7 @@ class VTKVCSBackend(object):
           if isinstance(gm,isoline.Gi):
             levs = levs2
       Nlevs=len(levs)
+      Ncolors = Nlevs
       ## Figure out colors
       if isinstance(gm,boxfill.Gfb):
         cols = gm.fillareacolors 
@@ -829,6 +857,33 @@ class VTKVCSBackend(object):
     self.renWin.AddRenderer(ren)
     self.renWin.Render()
     return
+
+  def vectorGraphics(self, output_type, file, width=None, height=None, units=None):
+    if self.renWin is None:
+      raise Exception("Nothing on Canvas to dump to file")
+
+    gl  = vtk.vtkGL2PSExporter()
+    gl.SetInput(self.renWin)
+    gl.SetCompress(0) # Do not compress
+    gl.SetFilePrefix(output_type)
+    if output_type=="svg":
+        gl.SetFileFormatToSVG()
+    elif output_type == "ps":
+        gl.SetFileFormatToPS()
+    elif output_type=="pdf":
+        gl.SetFileFormatToPDF()
+    else:
+        raise Exception("Unknown format: %s" % output_type)
+    gl.Write()
+
+  def postscript(self, file, width=None, height=None, units=None):
+      return self.vectorGraphics("ps", file, width, height, units)
+
+  def pdf(self, file, width=None, height=None, units=None):
+      return self.vectorGraphics("pdf", file, width, height, units)
+
+  def svg(self, file, width=None, height=None, units=None):
+      return self.vectorGraphics("svg", file, width, height, units)
 
   def png(self, file, width=None,height=None,units=None,draw_white_background = 0):
         
