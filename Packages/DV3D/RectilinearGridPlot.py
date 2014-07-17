@@ -7,7 +7,7 @@ Created on Apr 29, 2014
 import sys, vtk, cdms2, traceback, os, cdtime, math 
 from ColorMapManager import *  
 from Shapefile import shapeFileReader   
-from ImagePlaneWidget import ImagePlaneWidget  
+from ImagePlaneWidget import *  
 from DistributedPointCollections import kill_all_zombies
 from StructuredGridPlot import  *
 from StructuredDataset import *
@@ -115,7 +115,6 @@ class RectGridPlot(StructuredGridPlot):
         self.contours = None
         self.NumContours = 10.0
         self.showOutlineMap = True
-        self.zincSkipIndex = 1
         self.state = self.Start
         self.volume = None
         self.probeFilter = None
@@ -180,7 +179,7 @@ class RectGridPlot(StructuredGridPlot):
         elif args and args[0] == "InitConfig":
             self.updateTextDisplay( config_function.label )
             bbar = self.getInteractionButtons()
-            bbar.slidersVisible = [ ( islider < len(config_function.sliderLabels) ) for islider in range(4)]
+            for islider in range(4): bbar.setSliderVisibility( islider, islider < len(config_function.sliderLabels) )
         elif args and args[0] == "Open":
             pass
         elif args and args[0] == "Close":
@@ -209,7 +208,7 @@ class RectGridPlot(StructuredGridPlot):
         elif args and args[0] == "InitConfig":
             self.updateTextDisplay( config_function.label )
             bbar = self.getInteractionButtons()
-            bbar.slidersVisible = [ ( islider < len(config_function.sliderLabels) ) for islider in range(4)]
+            for islider in range(4): bbar.setSliderVisibility(  islider, islider < len(config_function.sliderLabels) )
         elif args and args[0] == "Open":
             pass
         elif args and args[0] == "Close":
@@ -243,7 +242,7 @@ class RectGridPlot(StructuredGridPlot):
         elif args and args[0] == "InitConfig":
             self.updateTextDisplay( config_function.label )
             bbar = self.getInteractionButtons()
-            bbar.slidersVisible = [ ( islider < len(config_function.sliderLabels) ) for islider in range(4)]
+            for islider in range(4): bbar.setSliderVisibility(  islider, islider < len(config_function.sliderLabels) )
         elif args and args[0] == "Open":
             pass
         elif args and args[0] == "Close":
@@ -269,7 +268,7 @@ class RectGridPlot(StructuredGridPlot):
         elif args and args[0] == "InitConfig":
             self.updateTextDisplay( config_function.label )
             bbar = self.getInteractionButtons()
-            bbar.slidersVisible = [ ( islider < len(config_function.sliderLabels) ) for islider in range(4)]
+            for islider in range(4): bbar.setSliderVisibility(  islider, islider < len(config_function.sliderLabels) )
         elif args and args[0] == "Open":
             pass
         elif args and args[0] == "Close":
@@ -286,9 +285,10 @@ class RectGridPlot(StructuredGridPlot):
         slicePosition = config_function.value
 #        print " ProcessSlicingCommand: args = %s, plane = %d, cf = %s" % ( str( args ), plane_index, config_function.key )
         if args and args[0] == "StartConfig":
-            pass
+            plane_widget.beginSlicing()
         elif args and args[0] == "Init":
             primaryInput = self.input()
+            slicePosition.setValue( 'count', 1 )
             bounds = list( primaryInput.GetBounds() ) 
             init_range = [ bounds[2*plane_index], bounds[2*plane_index+1] ]
             config_function.setRangeBounds( init_range ) 
@@ -299,8 +299,9 @@ class RectGridPlot(StructuredGridPlot):
             if config_function.key == 'z':
                 self.ProcessIPWAction( plane_widget, ImagePlaneWidget.InteractionUpdateEvent, action = ImagePlaneWidget.Pushing )
         elif args and args[0] == "EndConfig":
-            pass
+            plane_widget.endSlicing()
         elif args and args[0] == "InitConfig":
+            self.skipIndex = 4
             if (len(args) > 2) and args[2]: 
                 for index in range(3):  self.modifySlicePlaneVisibility( index, "xyz"[index], False ) 
                 self.updateTextDisplay( config_function.label ) 
@@ -315,10 +316,12 @@ class RectGridPlot(StructuredGridPlot):
         elif args and args[0] == "Close":
             pass
         elif args and args[0] == "UpdateConfig":
-            value = args[2].GetValue()
-            plane_widget.SetSlicePosition( value )
-            slicePosition.setValues( [ value ] )
-            self.ProcessIPWAction( plane_widget, ImagePlaneWidget.InteractionUpdateEvent, action = ImagePlaneWidget.Pushing )
+            count = slicePosition.incrementValue( 'count' )
+            if count % self.skipIndex == 0:
+                value = args[2].GetValue()
+                plane_widget.SetSlicePosition( value )
+                slicePosition.setValues( [ value ] )
+                self.ProcessIPWAction( plane_widget, ImagePlaneWidget.InteractionUpdateEvent, action = ImagePlaneWidget.Pushing )
 
  
     def resetCamera(self, **args):
@@ -837,9 +840,27 @@ class RectGridPlot(StructuredGridPlot):
         lut = self.getLut()
         picker = vtk.vtkCellPicker()
         picker.SetTolerance(0.005) 
+        interactionButtons = self.getInteractionButtons()
                 
         if self.planeWidgetZ == None:
-            self.planeWidgetZ = ImagePlaneWidget( self, picker, 2 )  
+            if self.type == 'vector':
+                vectorDisplayCF = CfgManager.getParameter( 'VectorDisplay' )
+                vectorDisplay = vectorDisplayCF.getInitValue( 'default' ).lower()
+                if vectorDisplay == 'lic':                    
+                    self.planeWidgetZ = LICSliceWidget( self, picker, 0 )  
+                if vectorDisplay == 'stream':
+                    self.planeWidgetZ = StreamlineSliceWidget( self, picker, 0 )  
+                    interactionButtons.addSliderButton( names=['StreamlineDensity'], key='g', toggle=True, sliderLabels='Streamline Spacing', label='Streamline Density', interactionHandler=self.planeWidgetZ.processStreamDensityCommand )
+                    interactionButtons.addSliderButton( names=['StreamlineLength'], key='G', toggle=True, sliderLabels='Scale Value', label='Streamline Length', interactionHandler=self.planeWidgetZ.processStreamScaleCommand )
+                    interactionButtons.build()                   
+                else:         
+                    self.planeWidgetZ = VectorSliceWidget( self, picker, 0 )
+                    interactionButtons.addSliderButton( names=['GlyphDensity'], key='g', toggle=True, sliderLabels='Glyph Spacing', label='Glyph Density', interactionHandler=self.planeWidgetZ.processGlyphDensityCommand )
+                    interactionButtons.addSliderButton( names=['GlyphSize'], key='G', toggle=True, sliderLabels=[ 'Scale Value', 'Range Value'], label='Glyph Size', interactionHandler=self.planeWidgetZ.processGlyphScaleCommand )
+                    interactionButtons.build()
+            else:
+                self.planeWidgetZ = ScalarSliceWidget( self, picker, 0 )
+            self.planeWidgetZ.SetRenderer( self.renderer )
             self.planeWidgetZ.SetRenderer( self.renderer )
 #            self.observerTargets.add( self.planeWidgetZ )
             prop3 = self.planeWidgetZ.GetPlaneProperty()
@@ -851,9 +872,9 @@ class RectGridPlot(StructuredGridPlot):
         self.planeWidgetZ.SetPlaneOrientationToZAxes()
         self.planeWidgetZ.PlaceWidget( bounds )
        
-        if self.planeWidgetZ.HasThirdDimension(): 
+        if self.planeWidgetZ.HasThirdDimension() and ( self.type <> 'vector' ): 
             if (self.planeWidgetX == None): 
-                self.planeWidgetX = ImagePlaneWidget( self, picker, 0 )
+                self.planeWidgetX = ScalarSliceWidget( self, picker, 0 )
 #               self.observerTargets.add( self.planeWidgetX )
                 self.planeWidgetX.SetRenderer( self.renderer )
                 prop1 = self.planeWidgetX.GetPlaneProperty()
@@ -866,7 +887,7 @@ class RectGridPlot(StructuredGridPlot):
             self.planeWidgetX.PlaceWidget( bounds )     
                     
             if self.planeWidgetY == None: 
-                self.planeWidgetY = ImagePlaneWidget( self, picker, 1)
+                self.planeWidgetY = ScalarSliceWidget( self, picker, 1)
                 self.planeWidgetY.SetRenderer( self.renderer )
                 self.planeWidgetY.SetUserControlledLookupTable(1)
 #                self.observerTargets.add( self.planeWidgetY )
@@ -902,9 +923,9 @@ class RectGridPlot(StructuredGridPlot):
             self.setBasemapCoastlineLineSpecs( [ 1, 1 ] )
             self.setBasemapCountriesLineSpecs( [ 0, 1 ] )
          
-        self.modifySlicePlaneVisibility( 0, 'x', False )   
-        self.modifySlicePlaneVisibility( 1, 'y', False )   
-        self.modifySlicePlaneVisibility( 2, 'z', False )  
+        if (self.planeWidgetX <> None): self.modifySlicePlaneVisibility( 0, 'x', False )   
+        if (self.planeWidgetY <> None): self.modifySlicePlaneVisibility( 1, 'y', False )   
+        if (self.planeWidgetZ <> None): self.modifySlicePlaneVisibility( 2, 'z', False )  
 
       
     def clipObserver( self, caller=None, event=None ):
@@ -1318,31 +1339,32 @@ class RectGridPlot(StructuredGridPlot):
 #TODO:    
     def modifySlicePlaneVisibility( self, slider_index, plane, make_visible=None ):
         plane_index, plane_widget = self.getPlaneWidget( plane )
-        bbar = self.getInteractionButtons()
-        if make_visible == None:  
-            make_visible = bbar.slidersVisible[ slider_index ] 
-        else:
-            bbar.slidersVisible[ slider_index ] = make_visible
-        if make_visible:   
-            plane_widget.VisibilityOn()
-            if plane == 'z': 
-                if self.generateContours:
-                    self.setContourVisibility( slider_index, True ) 
-                else: 
-                    self.basemapLinesVisibilityOn()
+        if plane_widget <> None:
+            bbar = self.getInteractionButtons()
+            if make_visible == None:  
+                make_visible = bbar.isSliderVisible( slider_index )
             else:
-                self.setContourVisibility( slider_index, True )
-        else:               
-            plane_widget.VisibilityOff()
-            if plane == 'z': 
-                if self.generateContours:
-                    self.setContourVisibility( slider_index, False ) 
-                else: 
-                    self.basemapLinesVisibilityOff()
-            else:
-                self.setContourVisibility( slider_index, False )
-                
-                                                                        
+                bbar.setSliderVisibility( slider_index, make_visible )
+            if make_visible:   
+                plane_widget.VisibilityOn()
+                if plane == 'z': 
+                    if self.generateContours:
+                        self.setContourVisibility( slider_index, True ) 
+                    else: 
+                        self.basemapLinesVisibilityOn()
+                else:
+                    self.setContourVisibility( slider_index, True )
+            else:               
+                plane_widget.VisibilityOff()
+                if plane == 'z': 
+                    if self.generateContours:
+                        self.setContourVisibility( slider_index, False ) 
+                    else: 
+                        self.basemapLinesVisibilityOff()
+                else:
+                    self.setContourVisibility( slider_index, False )
+                    
+                                                                            
 
 #        self.set3DOutput() 
 
