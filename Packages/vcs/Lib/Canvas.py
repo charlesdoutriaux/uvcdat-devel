@@ -2639,6 +2639,7 @@ Options:::
 
         # By defalut do the ratio thing for lat/lon and linear projection
         # but it can be overwritten by keyword
+        Doratio = keyargs.get("ratio",None)
         doratio=str(keyargs.get('ratio',self.ratio)).strip().lower()
         if doratio[-1]=='t' and doratio[0]=='0' :
             if float(doratio[:-1])==0.: doratio='0'
@@ -3589,6 +3590,8 @@ Options:::
         
             if dn is not None:
               dn._template_origin = template_origin
+              dn.ratio=Doratio
+
             if self.mode!=0 : self.update()
             #if not bg: pause(self.pause_time)
 
@@ -4086,7 +4089,7 @@ Options:::
     a.flush()
 
 """
-        return apply(self.canvas.flush, args)
+        return apply(self.backend.flush, args)
 
     #############################################################################
     #                                                                           #
@@ -4141,7 +4144,7 @@ Options:::
         if (args[0] <= 0) or (args[1] <= 0):
            raise ValueError, 'Error -  The width and height values must be an integer greater than 0.'
 
-        a=apply(self.canvas.geometry, args)
+        a=apply(self.backend.geometry, args)
         self.flush() # update the canvas by processing all the X events
 
         return a
@@ -4495,12 +4498,12 @@ Options:::
 """ 
         if (self.orientation() == 'portrait'): return
 
-        if ( ((not isinstance(width, IntType))) or ((not isinstance(height, IntType))) or
-             ((not isinstance(x, IntType))) or ((not isinstance(y, IntType)))  or 
+        if ( ((not isinstance(width, int))) or ((not isinstance(height, int))) or
+             ((not isinstance(x, int))) or ((not isinstance(y, int)))  or 
              ((width != -99) and (width < 0)) or ( (height != -99) and (height < 0)) or
               ((x != -99) and  (x < 0)) or ((y != -99) and (y <0)) ):
            raise ValueError, 'If specified, width, height, x, and y must be integer values greater than or equal to 0.'
-        if ( ((not isinstance(clear, IntType))) and (clear not in [0,1])):
+        if ( ((not isinstance(clear, int))) and (clear not in [0,1])):
            raise ValueError, "clear must be: 0 - 'the default value for not clearing the canvas' or 1 - 'for clearing the canvas'."
 
         if ( (width==-99) and (height==-99) and (x==-99) and (y==-99) and (clear==0) ):
@@ -4513,13 +4516,13 @@ Options:::
             y=dict.get('y',-99)
         self.flush() # update the canvas by processing all the X events
 
-        finish_queued_X_server_requests( self )
-        self.canvas.BLOCK_X_SERVER()
+        #finish_queued_X_server_requests( self )
+        #self.canvas.BLOCK_X_SERVER()
 
         args = (width, height, x, y, clear)
-        p = apply(self.canvas.portrait, args)
+        p = self.backend.portrait(*args)
 
-        self.canvas.UNBLOCK_X_SERVER()
+        #self.canvas.UNBLOCK_X_SERVER()
         return p
 
     ##########################################################################
@@ -4680,7 +4683,7 @@ Options:::
             
         if not file.split('.')[-1].lower() in ['pdf']:
             file+='.pdf'
-        return apply(self.canvas.pdf,(file,W,H))
+        return self.backend.pdf(file,W,H)
     #############################################################################
     #                                                                           #
     # SVG wrapper for VCS.                                               #
@@ -4724,7 +4727,7 @@ Options:::
            
         if not file.split('.')[-1].lower() in ['svg']:
             file+='.svg'
-        return apply(self.canvas.svg,(file,W,H))
+        return self.backend.svg(file,W,H)
 
     def _compute_margins(self,W,H,top_margin,bottom_margin,right_margin,left_margin,dpi):
         try:
@@ -4942,11 +4945,11 @@ Options:::
         if not file.split('.')[-1].lower() in ['ps','eps']:
             file+='.ps'
         if mode=='r':
-            return apply(self.canvas.postscript,(file,W,H,R,L,T,B))
+            return self.backend.postscript(file,W,H,R,L,T,B)
         else:
             n=random.randint(0,10000000000000)
             psnm='/tmp/'+'__VCS__tmp__'+str(n)+'.ps'
-            apply(self.canvas.postscript,(psnm,W,H,R,L,T,B))
+            self.backend.postscript(psnm,W,H,R,L,T,B)
             if os.path.exists(file):
                 f=open(file,'r+')
                 f.seek(0,2) # goes to end of file
@@ -5254,14 +5257,14 @@ Options:::
     # Touch all segements displayed on the VCS Canvas.                          #
     #                                                                           #
     #############################################################################
-    def updateVCSsegments(self, *args):
-        finish_queued_X_server_requests( self )
-        self.canvas.BLOCK_X_SERVER()
-
-        a = apply(self.canvas.updateVCSsegments, args)
-
-        self.canvas.UNBLOCK_X_SERVER()
-        return a
+    #def updateVCSsegments(self, *args):
+    #    finish_queued_X_server_requests( self )
+    #    self.canvas.BLOCK_X_SERVER()
+#
+#        a = apply(self.canvas.updateVCSsegments, args)
+#
+#        self.canvas.UNBLOCK_X_SERVER()
+#        return a
 
     #############################################################################
     #                                                                           #
@@ -5328,9 +5331,7 @@ Options:::
 
 """
 
-        a=apply(self.canvas.setcolorcell, args)
-        self.canvas.updateVCSsegments(self.mode) # pass down self and mode to _vcs module
-        self.flush() # update the canvas by processing all the X events
+        a=vcs.setcolorcell(self.colormap, *args)
         return a
 
     #############################################################################
@@ -5436,7 +5437,7 @@ Options:::
         f2 = f2=float(g[1]) / 849.85 * 100.0
         geometry = "%4.1fx%4.1f" % (f2,f1)
         nargs = ('gif', filename, merge, orientation, geometry)
-        return apply(self.canvas.gif_or_eps, nargs)
+        return self.backend.gif(nargs)
 
     #############################################################################
     #                                                                           #
@@ -5842,6 +5843,7 @@ Options:::
 
         return vcs.elements["colormap"][Cp_name_src]
 
+
     #############################################################################
     #                                                                           #
     # Font functions.                       #
@@ -6000,8 +6002,7 @@ Options:::
     a.getcolorcell(61,70,70,70)
 
 """
-        a=apply(self.canvas.getcolorcell, args)
-        return a
+        return vcs.getcolorcell(args[0],self)
 
     #############################################################################
     #                                                                           #

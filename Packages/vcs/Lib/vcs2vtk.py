@@ -8,31 +8,69 @@ import os
 import meshfill
 from vtk.util import numpy_support as VN
 import cdms2
+import warnings
 
 f = open(os.path.join(sys.prefix,"share","vcs","wmo_symbols.json"))
 wmo = json.load(f)
 
+def putMaskOnVTKGrid(data,grid,actorColor=None):
+  #Ok now looking 
+  msk = data.mask
+  imsk =  VN.numpy_to_vtk(msk.astype(numpy.int).flat,deep=True)
+  mapper = None
+  if msk is not numpy.ma.nomask:
+      msk =  VN.numpy_to_vtk(numpy.logical_not(msk).astype(numpy.uint8).flat,deep=True)
+      if actorColor is not None:
+          grid2 = vtk.vtkStructuredGrid()
+          grid2.CopyStructure(grid)
+          geoFilter = vtk.vtkDataSetSurfaceFilter()
+          if grid.IsA("vtkStructuredGrid"):
+              grid2.GetPointData().SetScalars(imsk)
+              #grid2.SetCellVisibilityArray(imsk)
+              p2c = vtk.vtkPointDataToCellData()
+              p2c.SetInputData(grid2)
+              geoFilter.SetInputConnection(p2c.GetOutputPort())
+          else:
+              grid2.GetCellData().SetScalars(imsk)
+              geoFilter.SetInputData(grid)
+          geoFilter.Update()
+          mapper = vtk.vtkPolyDataMapper()
+          mapper.SetInputData(geoFilter.GetOutput())
+          lut = vtk.vtkLookupTable()
+          lut.SetNumberOfTableValues(1)
+          r,g,b = actorColor
+          lut.SetNumberOfTableValues(2)
+          lut.SetTableValue(0,r/100.,g/100.,b/100.)
+          lut.SetTableValue(1,r/100.,g/100.,b/100.)
+          mapper.SetLookupTable(lut)
+          mapper.SetScalarRange(1,1)
+      if grid.IsA("vtkStructuredGrid"):
+          grid.SetPointVisibilityArray(msk)
+          #grid.SetCellVisibilityArray(msk)
+  return mapper
 
 def genUnstructuredGrid(data1,data2,gm):
   continents = False
   wrap = None
+  m3 = None
+  g = None
   try: #First try to see if we can get a mesh out of this
     g=data1.getGrid()
-    m=g.getMesh()
-    xm = m[:,1].min()
-    xM = m[:,1].max()
-    ym = m[:,0].min()
-    yM = m[:,0].max()
-
-    N=m.shape[0]
-    #For vtk we need to reorder things
-    m2 = numpy.ascontiguousarray(numpy.transpose(m,(0,2,1)))
-    m2.resize((m2.shape[0]*m2.shape[1],m2.shape[2]))
-    m2=m2[...,::-1]
-    # here we add dummy levels, might want to reconsider converting "trimData" to "reOrderData" and use actual levels?
-    m3=numpy.concatenate((m2,numpy.zeros((m2.shape[0],1))),axis=1)
-    continents = True
-    wrap = [0.,360.]
+    if isinstance(g,cdms2.gengrid.AbstractGenericGrid): # Ok need unstrctured grid
+      m=g.getMesh()
+      xm = m[:,1].min()
+      xM = m[:,1].max()
+      ym = m[:,0].min()
+      yM = m[:,0].max()
+      N=m.shape[0]
+      #For vtk we need to reorder things
+      m2 = numpy.ascontiguousarray(numpy.transpose(m,(0,2,1)))
+      m2.resize((m2.shape[0]*m2.shape[1],m2.shape[2]))
+      m2=m2[...,::-1]
+      # here we add dummy levels, might want to reconsider converting "trimData" to "reOrderData" and use actual levels?
+      m3=numpy.concatenate((m2,numpy.zeros((m2.shape[0],1))),axis=1)
+      continents = True
+      wrap = [0.,360.]
   except Exception,err: # Ok no mesh on file, will do with lat/lon
     ## Could still be meshfill with mesh data
     if isinstance(gm,meshfill.Gfm) and data2 is not None:
@@ -45,27 +83,47 @@ def genUnstructuredGrid(data1,data2,gm):
       if gm.wrap[1]==360.:
         continents = True
       wrap = gm.wrap
+  if m3 is not None:
+    #Create unstructured grid points
+    vg = vtk.vtkUnstructuredGrid()
+    for i in range(N):
+      lst = vtk.vtkIdList()
+      for j in range(4):
+        lst.InsertNextId(i*4+j)
+      ## ??? TODO ??? when 3D use CUBE?
+      vg.InsertNextCell(vtk.VTK_QUAD,lst)
+  else:
+    #Ok a simple structured grid is enough
+    vg = vtk.vtkStructuredGrid()
+    if g is not None:
+      # Ok we have grid
+      lat = g.getLatitude()
+      lon = g.getLongitude()
+      continents = True
+      wrap = [0.,360.]
+      if not isinstance(g,cdms2.hgrid.AbstractCurveGrid):
+        lat = lat[:,numpy.newaxis]*numpy.ones(lon.shape)[numpy.newaxis,:]
+        lon = lon[numpy.newaxis,:]*numpy.ones(lat.shape)[:,numpy.newaxis]
     else:
       data1=cdms2.asVariable(data1)
-      #Ok no mesh info
-      # first lat/lon case
-      if data1.getLatitude() is not None and data1.getLongitude() is not None and data1.getAxis(-1).isLongitude():
-        continents = True
-        wrap = [0.,360.]
-      x=data1.getAxis(-1)[:]
-      y=data1.getAxis(-2)[:]
-      xm=x.min()
-      xM=x.max()
-      ym=y.min()
-      yM=y.max()
-      # make it 2D
-      x = x[numpy.newaxis,:]*numpy.ones(y.shape)[:,numpy.newaxis]
-      y = y[:,numpy.newaxis]*numpy.ones(x.shape)[numpy.newaxis,:]
-      z = numpy.zeros(x.shape)
-      m3=numpy.concatenate((x,y,z),axis=1)
-  #Create unstructured grid points
-  ug = vtk.vtkUnstructuredGrid()
-
+      lon=data1.getAxis(-1)[:]
+      lat=data1.getAxis(-2)[:]
+      lat = lat[:,numpy.newaxis]*numpy.ones(lon.shape)[numpy.newaxis,:]
+      lon = lon[numpy.newaxis,:]*numpy.ones(lat.shape)[:,numpy.newaxis]
+    vg.SetDimensions(lat.shape[1],lat.shape[0],1)
+    lon = numpy.ma.ravel(lon)
+    lat = numpy.ma.ravel(lat)
+    sh = list(lat.shape)
+    sh.append(1)
+    lon = numpy.ma.reshape(lon,sh)
+    lat = numpy.ma.reshape(lat,sh)
+    z = numpy.zeros(lon.shape)
+    m3 = numpy.concatenate((lon,lat),axis=1)
+    m3 = numpy.concatenate((m3,z),axis=1)
+    xm=lon.min()
+    xM=lon.max()
+    ym=lat.min()
+    yM=lat.max()
   # First create the points/vertices (in vcs terms)
   deep = True
   pts = vtk.vtkPoints()
@@ -76,17 +134,11 @@ def genUnstructuredGrid(data1,data2,gm):
   projection = vcs.elements["projection"][gm.projection]
   geopts = project(pts,projection)
   ## Sets the vertics into the grid
-  ug.SetPoints(geopts)
+  vg.SetPoints(geopts)
 
 
-  for i in range(N):
-    lst = vtk.vtkIdList()
-    for j in range(4):
-      lst.InsertNextId(i*4+j)
-    ## ??? TODO ??? when 3D use CUBE?
-    ug.InsertNextCell(vtk.VTK_QUAD,lst)
 
-  return ug,xm,xM,ym,yM,continents,wrap
+  return vg,xm,xM,ym,yM,continents,wrap
 
 def getRange(gm,xm,xM,ym,yM):
     # Also need to make sure it fills the whole space
@@ -191,6 +243,8 @@ def dump2VTK(obj,fnm=None):
 
 #Wrapping around
 def doWrap(Act,wc,wrap=[0.,360]):
+  if wrap is None:
+    return Act
   Mapper = Act.GetMapper()
   data = Mapper.GetInput()
   xmn=min(wc[0],wc[1])
@@ -298,7 +352,7 @@ def doClip1(data,value,normal,axis=0):
     clp.Update()
     return clp.GetOutput()
 
-def prepTextProperty(p,to="default",tt="default",cmap=None):
+def prepTextProperty(p,winSize,to="default",tt="default",cmap=None):
   if isinstance(to,str):
     to = vcs.elements["textorientation"][to]
   if isinstance(tt,str):
@@ -335,6 +389,8 @@ def prepTextProperty(p,to="default",tt="default",cmap=None):
   p.SetOrientation(-to.angle)
   p.SetFontFamily(vtk.VTK_FONT_FILE)
   p.SetFontFile(vcs.elements["font"][vcs.elements["fontNumber"][tt.font]])
+  p.SetFontSize(int(to.height*winSize[1]/800.))
+  
 
 def genTextActor(renderer,string=None,x=None,y=None,to='default',tt='default',cmap=None):
   if isinstance(to,str):
@@ -357,13 +413,18 @@ def genTextActor(renderer,string=None,x=None,y=None,to='default',tt='default',cm
     while len(a)<n:
       a.append(a[-1])
 
+  sz = renderer.GetRenderWindow().GetSize()
   for i in range(n):
     t = vtk.vtkTextActor()
     p=t.GetTextProperty()
-    prepTextProperty(p,to,tt,cmap)
+    prepTextProperty(p,sz,to,tt,cmap)
     t.SetInput(string[i])
     X,Y = world2Renderer(renderer,x[i],y[i],tt.viewport,tt.worldcoordinate)
     t.SetPosition(X,Y)
+    #T=vtk.vtkTransform()
+    #T.Scale(1.,sz[1]/606.,1.)
+    #T.RotateY(to.angle)
+    #t.SetUserTransform(T)
     renderer.AddActor(t)
   return 
 

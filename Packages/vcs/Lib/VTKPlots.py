@@ -98,17 +98,29 @@ class VTKVCSBackend(object):
                 st+="Var: %s\nX = %g\nY[%i] = %g\nValue: %g" % (d.array[0].id,X,I,Y,V)
         except:
             st+="Var: %s\nX=%g\nY=%g\nValue = N/A" % (d.array[0].id,X,Y)
-    a=vtk.vtkTextActor()
-    a.SetInput(st)
-    #a.SetPosition(xy[0],xy[1])
-    p=a.GetProperty()
-    p.SetColor(0,0,0)
     ren = vtk.vtkRenderer()
-    #ren.SetLayer(1)
-    ren.AddActor(a)
     ren.SetBackground(.96,.96,.86)
     ren.SetViewport(x,y,min(x+.2,1.),min(y+.2,1))
     ren.SetLayer(self.renWin.GetNumberOfLayers()-1)
+    a=vtk.vtkTextActor()
+    a.SetInput(st)
+    p=a.GetProperty()
+    p.SetColor(0,0,0)
+    bb = [0,0,0,0]
+    a.GetBoundingBox(ren,bb)
+    ps=vtk.vtkPlaneSource()
+    ps.SetCenter(bb[0],bb[2],0.)
+    ps.SetPoint1(bb[1],bb[2],0.)
+    ps.SetPoint2(bb[0],bb[3],0.)
+    ps.Update()
+    m2d=vtk.vtkPolyDataMapper2D()
+    m2d.SetInputConnection(ps.GetOutputPort())
+    a2d=vtk.vtkActor2D()
+    a2d.SetMapper(m2d)
+    a2d.GetProperty().SetColor(.93,.91,.67)
+    ren.AddActor(a2d)
+    ren.AddActor(a)
+    ren.ResetCamera()
     self.clickRenderer= ren
     self.renWin.AddRenderer(ren)
     self.renWin.Render()
@@ -128,6 +140,7 @@ class VTKVCSBackend(object):
       return
     self._lastSize = sz
     plots_args = []
+    key_args =[]
     for dnm in self.canvas.display_names:
       d=vcs.elements["display"][dnm]
       parg = []
@@ -138,11 +151,17 @@ class VTKVCSBackend(object):
       parg.append(d.g_type)
       parg.append(d.g_name)
       plots_args.append(parg)
+      if d.ratio is not None:
+          key_args.append({"ratio":d.ratio})
+      else:
+          key_args.append({})
     self.canvas.clear()
-    for pargs in plots_args:
-      self.canvas.plot(*pargs)
+    for i, pargs in enumerate(plots_args):
+      self.canvas.plot(*pargs,**key_args[i])
 
   def clear(self):
+    if self.renWin is None: #Nothing to clear
+          return
     renderers = self.renWin.GetRenderers()
     renderers.InitTraversal()
     ren = renderers.GetNextItem()
@@ -224,6 +243,20 @@ class VTKVCSBackend(object):
     else:
       return "portrait"
 
+  def portrait(self,W,H,x,y,clear):
+      if clear:
+          self.clear()
+      if self.renWin is None:
+          if W!=-99:
+              self.canvas.bgX = W
+              self.canvas.bgY = H
+          else:
+              W = self.canvas.bgX
+              self.canvas.bgX = self.canvas.bgY
+              self.canvas.bgY = W
+      else:
+          self.renWin.SetSize(W,H)
+
   def initialSize(self):
       #screenSize = self.renWin.GetScreenSize()
       self.renWin.SetSize(self.canvas.bgX,self.canvas.bgY)
@@ -237,6 +270,14 @@ class VTKVCSBackend(object):
     if self.renWin is None:
       return
     self.renWin.Finalize()
+
+  def geometry(self,x,y,*args):
+      #screenSize = self.renWin.GetScreenSize()
+      self.renWin.SetSize(x,y)
+
+  def flush(self):
+      if self.renWin is not None:
+          self.renWin.Render()
 
   def plot(self,data1,data2,template,gtype,gname,bg,*args,**kargs):
     self.numberOfPlotCalls+=1
@@ -261,7 +302,7 @@ class VTKVCSBackend(object):
       ren = kargs["renderer"]
 
     #screenSize = self.renWin.GetScreenSize()
-    if gtype in ["boxfill","meshfill","isoline","isofill"]:
+    if gtype in ["boxfill","meshfill","isoline","isofill","vector"]:
       data1 = self.trimData2D(data1) # Ok get only the last 2 dims
       data2 = self.trimData2D(data2)
     #elif vcs.isgraphicsmethod(vcs.elements[gtype][gname]):
@@ -420,9 +461,18 @@ class VTKVCSBackend(object):
   def plotVector(self,data1,data2,tmpl,gm,ren):
     self.setLayer(ren,tmpl.data.priority)
     ug,xm,xM,ym,yM,continents,wrap = vcs2vtk.genUnstructuredGrid(data1,data2,gm)
-    print "Got ug"
-    u=numpy.ravel(data1)
-    v=numpy.ravel(data2)
+    if ug.IsA("vtkUnstructuredGrid"):
+        c2p = vtk.vtkCellDataToPointData()
+        c2p.SetInputData(ug)
+        c2p.Update()
+        #For contouring duplicate points seem to confuse it
+        cln = vtk.vtkCleanUnstructuredGrid()
+        cln.SetInputConnection(c2p.GetOutputPort())
+
+    missingMapper = vcs2vtk.putMaskOnVTKGrid(data1,ug,None)
+
+    u=numpy.ma.ravel(data1)
+    v=numpy.ma.ravel(data2)
     sh = list(u.shape)
     sh.append(1)
     u = numpy.reshape(u,sh)
@@ -435,19 +485,49 @@ class VTKVCSBackend(object):
     ug.GetPointData().AddArray(w)
     ## Vector attempt
     arrow = vtk.vtkArrowSource()
+    l = gm.line
+    if l is None:
+        l = "default"
+    try:
+      l = vcs.getline(l)
+      lwidth = l.width[0]
+      lcolor = l.color[0]
+      lstyle = l.type[0]
+    except:
+      lstyle = "solid"
+      lwidth = 1.
+      lcolor = 0
+    if gm.linewidth is not None:
+        lwidth = gm.linewidth
+    if gm.linecolor is not None:
+        lcolor = gm.linecolor
+
+
+    arrow.SetTipRadius(.1*lwidth)
+    arrow.SetShaftRadius(.03*lwidth)
     arrow.Update()
     glyphFilter = vtk.vtkGlyph2D()
     glyphFilter.SetSourceConnection(arrow.GetOutputPort())
     glyphFilter.OrientOn()
     glyphFilter.SetVectorModeToUseVector()
     glyphFilter.SetInputArrayToProcess(1,0,0,0,"vectors")
-    print "Setting uh"
-    glyphFilter.SetInputData(ug)
+    glyphFilter.SetScaleFactor(2.*gm.scale)
+    if ug.IsA("vtkUnstructuredGrid"):
+        glyphFilter.SetInputConnection(cln.GetOutputPort())
+    else:
+        glyphFilter.SetInputData(ug)
 
     mapper = vtk.vtkPolyDataMapper()
     mapper.SetInputConnection(glyphFilter.GetOutputPort())
     act = vtk.vtkActor()
     act.SetMapper(mapper)
+    try:
+      cmap = vcs.elements["colormap"][cmap]
+    except:
+      cmap = vcs.elements["colormap"][self.canvas.getcolormapname()]
+    print "LCOLOR:",lcolor
+    r,g,b = cmap.index[lcolor]
+    act.GetProperty().SetColor(r/100.,g/100.,b/100.)
     x1,x2,y1,y2 = vcs2vtk.getRange(gm,xm,xM,ym,yM)
     #act = vcs2vtk.doWrap(act,[x1,x2,y1,y2],wrap)
     #vcs2vtk.fitToViewport(act,ren,[tmpl.data.x1,tmpl.data.x2,tmpl.data.y1,tmpl.data.y2],[x1,x2,y1,y2])
@@ -459,20 +539,27 @@ class VTKVCSBackend(object):
     if continents:
         projection = vcs.elements["projection"][gm.projection]
         self.plotContinents(x1,x2,y1,y2,projection,wrap,ren,tmpl)
-    print "Done!"
 
 
   def plot2D(self,data1,data2,tmpl,gm,ren):
     self.setLayer(ren,tmpl.data.priority)
     ug,xm,xM,ym,yM,continents,wrap = vcs2vtk.genUnstructuredGrid(data1,data2,gm)
     #Now applies the actual data on each cell
-    data = VN.numpy_to_vtk(data1.filled().flat,deep=True)
-    ug.GetCellData().SetScalars(data)
-
+    data = VN.numpy_to_vtk(data1.filled(0.).flat,deep=True)
+    if ug.IsA("vtkUnstructuredGrid"):
+        ug.GetCellData().SetScalars(data)
+    else:
+        ug.GetPointData().SetScalars(data)
+    
     try:
       cmap = vcs.elements["colormap"][cmap]
     except:
       cmap = vcs.elements["colormap"][self.canvas.getcolormapname()]
+
+    color = getattr(gm,"missing",None)
+    if color is not None:
+        color = cmap.index[color]
+    missingMapper = vcs2vtk.putMaskOnVTKGrid(data1,ug,color)
     lut = vtk.vtkLookupTable()
     #lut.SetTableRange(0,Nlevs)
     ## Following assumes contiguous levels for now
@@ -483,26 +570,33 @@ class VTKVCSBackend(object):
     if isinstance(gm,(isofill.Gfi,isoline.Gi,meshfill.Gfm)) or \
         (isinstance(gm,boxfill.Gfb) and gm.boxfill_type=="custom"):
       
-      # Sets data to point instead of just cells
-      c2p = vtk.vtkCellDataToPointData()
-      c2p.SetInputData(ug)
-      c2p.Update()
-      if self.debug:
-        vcs2vtk.dump2VTK(c2p)
-      #For contouring duplicate points seem to confuse it
-      cln = vtk.vtkCleanUnstructuredGrid()
-      cln.SetInputConnection(c2p.GetOutputPort())
-      if self.debug:
-        vcs2vtk.dump2VTK(cln)
+      if ug.IsA("vtkUnstructuredGrid"):
+          # Sets data to point instead of just cells
+          c2p = vtk.vtkCellDataToPointData()
+          c2p.SetInputData(ug)
+          c2p.Update()
+          if self.debug:
+            vcs2vtk.dump2VTK(c2p)
+          #For contouring duplicate points seem to confuse it
+          cln = vtk.vtkCleanUnstructuredGrid()
+          cln.SetInputConnection(c2p.GetOutputPort())
+          if self.debug:
+            vcs2vtk.dump2VTK(cln)
       #Now this filter seems to create the good polydata
       sFilter = vtk.vtkDataSetSurfaceFilter()
-      sFilter.SetInputConnection(cln.GetOutputPort())
+      if ug.IsA("vtkUnstructuredGrid"):
+        sFilter.SetInputConnection(cln.GetOutputPort())
+      else:
+        sFilter.SetInputData(ug)
       sFilter.Update()
       if self.debug:
         vcs2vtk.dump2VTK(sFilter)
       if isinstance(gm,isoline.Gi):
         cot = vtk.vtkContourFilter()
-        cot.SetInputData(sFilter.GetOutput())
+        if ug.IsA("vtkUnstructuredGrid"):
+          cot.SetInputData(sFilter.GetOutput())
+        else:
+          cot.SetInputData(ug)
 
 
       levs = gm.levels
@@ -530,6 +624,7 @@ class VTKVCSBackend(object):
           if isinstance(gm,isoline.Gi):
             levs = levs2
       Nlevs=len(levs)
+      Ncolors = Nlevs
       ## Figure out colors
       if isinstance(gm,boxfill.Gfb):
         cols = gm.fillareacolors 
@@ -588,7 +683,13 @@ class VTKVCSBackend(object):
     else: #Boxfill/Meshfill
       mappers=[]
       geoFilter = vtk.vtkGeometryFilter()
-      geoFilter.SetInputData(ug)
+      if ug.IsA("vtkUnstructuredGrid"):
+        geoFilter.SetInputData(ug)
+      else:
+          p2c = vtk.vtkPointDataToCellData()
+          p2c.SetInputData(ug)
+          geoFilter = vtk.vtkDataSetSurfaceFilter()
+          geoFilter.SetInputConnection(p2c.GetOutputPort())
       geoFilter.Update()
       mapper.SetInputData(geoFilter.GetOutput())
       if isinstance(gm,boxfill.Gfb):
@@ -615,6 +716,7 @@ class VTKVCSBackend(object):
       Nlevs = len(levs)
       Ncolors = Nlevs-1
 
+
     if mappers == []: # ok didn't need to have special banded contours
       mappers=[mapper,]
       ## Colortable bit
@@ -637,6 +739,9 @@ class VTKVCSBackend(object):
       else:
         lmx= levs[-1]
       mapper.SetScalarRange(lmn,lmx)
+
+    if missingMapper is not None:
+        mappers.insert(0,missingMapper)
 
     x1,x2,y1,y2 = vcs2vtk.getRange(gm,xm,xM,ym,yM)
 
@@ -706,10 +811,10 @@ class VTKVCSBackend(object):
       daxes=list(data.getAxisList())
       if daxes[len(daxes)-len(gaxes):] == gaxes:
         # Ok it is gridded and the grid axes are last
-        return data(*(slice(0,1),)*(len(daxes)-len(gaxes)))
+        return data(*(slice(0,1),)*(len(daxes)-len(gaxes)),squeeze=1)
       else:
         # Ok just return the last two dims
-        return data(*(slice(0,1),)*(len(daxes)-2))
+        return data(*(slice(0,1),)*(len(daxes)-2),squeeze=1)
     except Exception,err: # ok no grid info
       print "Got exception",err
       daxes=list(data.getAxisList())
@@ -752,6 +857,33 @@ class VTKVCSBackend(object):
     self.renWin.AddRenderer(ren)
     self.renWin.Render()
     return
+
+  def vectorGraphics(self, output_type, file, width=None, height=None, units=None):
+    if self.renWin is None:
+      raise Exception("Nothing on Canvas to dump to file")
+
+    gl  = vtk.vtkGL2PSExporter()
+    gl.SetInput(self.renWin)
+    gl.SetCompress(0) # Do not compress
+    gl.SetFilePrefix(output_type)
+    if output_type=="svg":
+        gl.SetFileFormatToSVG()
+    elif output_type == "ps":
+        gl.SetFileFormatToPS()
+    elif output_type=="pdf":
+        gl.SetFileFormatToPDF()
+    else:
+        raise Exception("Unknown format: %s" % output_type)
+    gl.Write()
+
+  def postscript(self, file, width=None, height=None, units=None):
+      return self.vectorGraphics("ps", file, width, height, units)
+
+  def pdf(self, file, width=None, height=None, units=None):
+      return self.vectorGraphics("pdf", file, width, height, units)
+
+  def svg(self, file, width=None, height=None, units=None):
+      return self.vectorGraphics("svg", file, width, height, units)
 
   def png(self, file, width=None,height=None,units=None,draw_white_background = 0):
         
