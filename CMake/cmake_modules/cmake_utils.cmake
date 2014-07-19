@@ -70,7 +70,6 @@ macro (add_cdat_package package_name version_string msg default)
   # Check if package is found, if not found or found but user prefers to use cdat package
   # then use cdat package or else use system package
   if(NOT CDAT_USE_SYSTEM_${uc_package})
-      message("Appending ${package_name}")
       list(APPEND external_packages "${package_name}")
       set(${lc_package}_pkg "${package_name}")
 
