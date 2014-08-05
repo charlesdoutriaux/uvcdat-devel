@@ -419,13 +419,16 @@ class VTKVCSBackend(object):
     m.viewport=l.viewport
     m.worldcoordinate = l.worldcoordinate
     
-    self.canvas.plot(l,renderer=ren,donotstoredisplay=True)
-    self.canvas.plot(m,renderer=ren,donotstoredisplay=True)
+    if not (Y.min()>max(y1,y2) or Y.max()<min(y1,y2) or X.min()>max(x1,x2) or X.max()<min(x1,x2)):
+        self.canvas.plot(l,renderer=ren,donotstoredisplay=True)
+        self.canvas.plot(m,renderer=ren,donotstoredisplay=True)
     ren2 = vtk.vtkRenderer()
+    self.renWin.AddRenderer(ren2)
     tmpl.plot(self.canvas,data1,gm,bg=self.bg,renderer=ren2,X=X,Y=Y)
     
     if tmpl.legend.priority>0:
         ren2 = vtk.vtkRenderer()
+        self.renWin.AddRenderer(ren2)
         self.setLayer(ren2,tmpl.legend.priority)
         legd = self.canvas.createline()
         legd.x = [tmpl.legend.x1, tmpl.legend.x2]
