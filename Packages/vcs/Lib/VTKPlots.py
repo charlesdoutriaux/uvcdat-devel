@@ -558,6 +558,8 @@ class VTKVCSBackend(object):
     self.setLayer(ren,tmpl.data.priority)
     ug,xm,xM,ym,yM,continents,wrap = vcs2vtk.genUnstructuredGrid(data1,data2,gm)
     #Now applies the actual data on each cell
+    if isinstance(gm,boxfill.Gfb) and gm.boxfill_type=="log10":
+        data1=numpy.ma.log10(data1)
     data = VN.numpy_to_vtk(data1.filled(0.).flat,deep=True)
     if ug.IsA("vtkUnstructuredGrid"):
         ug.GetCellData().SetScalars(data)
@@ -578,6 +580,17 @@ class VTKVCSBackend(object):
     #Ok now we have grid and data let's use the mapper
     mapper = vtk.vtkPolyDataMapper()
     legend = None
+    if isinstance(gm,boxfill.Gfb):
+      geoFilter = vtk.vtkGeometryFilter()
+      if ug.IsA("vtkUnstructuredGrid"):
+        geoFilter.SetInputData(ug)
+      else:
+          p2c = vtk.vtkPointDataToCellData()
+          p2c.SetInputData(ug)
+          geoFilter = vtk.vtkDataSetSurfaceFilter()
+          geoFilter.SetInputConnection(p2c.GetOutputPort())
+      geoFilter.Update()
+
     if isinstance(gm,(isofill.Gfi,isoline.Gi,meshfill.Gfm)) or \
         (isinstance(gm,boxfill.Gfb) and gm.boxfill_type=="custom"):
       
@@ -671,12 +684,19 @@ class VTKVCSBackend(object):
         for i,l in enumerate(levs):
             if i==0:
                 C = [cols[i],]
-                L = levs[i]
+                if numpy.allclose(levs[0][0],-1.e20):
+                    ## ok it's an extension arrow
+                    L=[mn-1.,levs[0][1]]
+                else: 
+                    L = levs[i]
                 I = [indices[i],]
             else:
                 if l[0] == L[-1] and I[-1]==indices[i]:
                     # Ok same type lets keep going
-                    L.append(l[1])
+                    if numpy.allclose(l[1],1.e20):
+                        L.append(mx+1.)
+                    else:
+                        L.append(l[1])
                     C.append(cols[i])
                 else: # ok we need new contouring
                     LEVS.append(L)
@@ -694,48 +714,52 @@ class VTKVCSBackend(object):
           # Ok here we are trying to group together levels can be, a join will happen if:
           # next set of levels contnues where one left off AND pattern is identical
            
-          mapper = vtk.vtkPolyDataMapper()
-          cot = vtk.vtkBandedPolyDataContourFilter()
-          cot.ClippingOn()
-          cot.SetInputData(sFilter.GetOutput())
-          cot.SetNumberOfContours(len(l))
-          for j,v in enumerate(l):
-              cot.SetValue(j,l[j])
-          cot.Update()
-          mapper.SetInputConnection(cot.GetOutputPort())
-          #mapper.SetInputData(cot.GetOutput())
-          lut = vtk.vtkLookupTable()
-          lut.SetNumberOfTableValues(len(COLS[i]))
-          for j,color in enumerate(COLS[i]):
-              r,g,b = cmap.index[color]      
-              lut.SetTableValue(j,r/100.,g/100.,b/100.)
-          mapper.SetLookupTable(lut)
-          if numpy.allclose(l[0],-1.e20):
-            lmn = mn-1.
+          if isinstance(gm,isofill.Gfi):
+              mapper = vtk.vtkPolyDataMapper()
+              lut = vtk.vtkLookupTable()
+              cot = vtk.vtkBandedPolyDataContourFilter()
+              cot.ClippingOn()
+              cot.SetInputData(sFilter.GetOutput())
+              cot.SetNumberOfContours(len(l))
+              for j,v in enumerate(l):
+                  cot.SetValue(j,v)
+              #cot.SetScalarModeToIndex()
+              cot.Update()
+              mapper.SetInputConnection(cot.GetOutputPort())
+              lut.SetNumberOfTableValues(len(COLS[i]))
+              for j,color in enumerate(COLS[i]):
+                  r,g,b = cmap.index[color]      
+                  lut.SetTableValue(j,r/100.,g/100.,b/100.)
+                  #print l[j],vcs.colors.rgb2str(r*2.55,g*2.55,b*2.55),l[j+1]
+              mapper.SetLookupTable(lut)
+              mapper.SetScalarRange(0,len(l)-1)
+              mapper.SetScalarModeToUseCellData()
           else:
-            lmn= l[0]
-          if numpy.allclose(l[-1],1.e20):
-            lmx = mx+1.
-          else:
-            lmx= l[-1]
-          mapper.SetScalarRange(lmn,lmx)
+              for j,color in enumerate(COLS[i]):
+                  mapper = vtk.vtkPolyDataMapper()
+                  lut = vtk.vtkLookupTable()
+                  th = vtk.vtkThreshold()
+                  th.ThresholdBetween(l[j],l[j+1])
+                  th.SetInputConnection(geoFilter.GetOutputPort())
+                  geoFilter2 = vtk.vtkDataSetSurfaceFilter()
+                  geoFilter2.SetInputConnection(th.GetOutputPort())
+                  mapper.SetInputConnection(geoFilter2.GetOutputPort())
+                  lut.SetNumberOfTableValues(1)
+                  r,g,b = cmap.index[color]      
+                  lut.SetTableValue(0,r/100.,g/100.,b/100.)
+                  mapper.SetLookupTable(lut)
+                  mapper.SetScalarRange(l[j],l[j+1])
+                  mappers.append([mapper,])
+
           #png = vtk.vtkPNGReader()
           #png.SetFileName("/git/uvcdat/Packages/vcs/Share/uvcdat_texture.png")
           #T=vtk.vtkTexture()
           #T.SetInputConnection(png.GetOutputPort())
-          mappers.append([mapper,])
+          if isinstance(gm,isofill.Gfi):
+              mappers.append([mapper,])
 
     else: #Boxfill/Meshfill
       mappers=[]
-      geoFilter = vtk.vtkGeometryFilter()
-      if ug.IsA("vtkUnstructuredGrid"):
-        geoFilter.SetInputData(ug)
-      else:
-          p2c = vtk.vtkPointDataToCellData()
-          p2c.SetInputData(ug)
-          geoFilter = vtk.vtkDataSetSurfaceFilter()
-          geoFilter.SetInputConnection(p2c.GetOutputPort())
-      geoFilter.Update()
       mapper.SetInputData(geoFilter.GetOutput())
       if isinstance(gm,boxfill.Gfb):
         if numpy.allclose(gm.level_1,1.e20) or numpy.allclose(gm.level_2,1.e20):
@@ -744,9 +768,17 @@ class VTKVCSBackend(object):
           dx = (levs[-1]-levs[0])/(gm.color_2-gm.color_1+1)
           levs = numpy.arange(levs[0],levs[-1]+dx,dx)
         else:
-          levs = vcs.mkscale(gm.level_1,gm.level_2)
+          if gm.boxfill_type=="log10":
+              levs = vcs.mkscale(numpy.ma.log10(gm.level_1),numpy.ma.log10(gm.level_2))
+          else:
+              levs = vcs.mkscale(gm.level_1,gm.level_2)
           legend = vcs.mklabels(levs)
-          levs = numpy.arange(gm.level_1,gm.level_2,(gm.level_2-gm.level_1)/(gm.color_2-gm.color_1+1))
+          if gm.boxfill_type=="log10":
+              for k in legend.keys():
+                  legend[float(numpy.ma.log10(legend[k]))] = legend[k]
+                  del(legend[k])
+          levs = numpy.arange(levs[0],levs[1],(levs[1]-levs[0])/(gm.color_2-gm.color_1+1))
+
         cols = range(gm.color_1,gm.color_2+1)
       else:
         if numpy.allclose(gm.levels,1.e20):
@@ -799,7 +831,7 @@ class VTKVCSBackend(object):
         else:
           mapper.Update()
           act.SetMapper(mapper)
-        act = vcs2vtk.doWrap(act,[x1,x2,y1,y2],wrap)
+        #act = vcs2vtk.doWrap(act,[x1,x2,y1,y2],wrap)
         if isinstance(mapper,list):
           #act.GetMapper().ScalarVisibilityOff()
           #act.SetTexture(mapper[1])
