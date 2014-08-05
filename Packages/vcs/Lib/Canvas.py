@@ -314,8 +314,8 @@ class Canvas(object,AutoAPI.AutoAPI):
         'canvas_guianimate_info',
         ]
     
-    def applicationFocusChanged(self, old, current ):
-        self.backend.applicationFocusChanged()
+#     def applicationFocusChanged(self, old, current ):
+#         self.backend.applicationFocusChanged()
         
     def _set_user_actions_names(self,value):
         value=VCS_validation_functions.checkListElements(self,'user_actions_names',value,VCS_validation_functions.checkString)
@@ -2463,7 +2463,6 @@ Options:::
 ###############################################################################################################
 
 """
-
         self.__last_plot_actual_args = actual_args
         self.__last_plot_keyargs = keyargs
 
